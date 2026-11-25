@@ -54,7 +54,7 @@
   <header class="bg-slate-950 text-white sticky top-0 z-40 shadow-xl border-b border-slate-800">
     <div class="max-w-3xl mx-auto px-3 sm:px-5 py-2.5 space-y-2.5">
 
-      <!-- Row 1: Title, Connectivity Simulator Toggle, Sync Counter & Architecture/PDPO Guide -->
+      <!-- Row 1: Title, Connectivity Simulator Toggle, Sync Counter -->
       <div class="flex flex-wrap items-center justify-between gap-2">
         <div class="flex items-center gap-2.5">
           <div class="w-10 h-10 rounded-xl bg-blue-800 border border-blue-400/40 flex flex-col items-center justify-center shrink-0 shadow-inner">
@@ -72,7 +72,7 @@
         </div>
 
         <div class="flex items-center gap-1.5 sm:gap-2">
-          <!-- Connectivity Toggle: [ONLINE 5G (POSTGRES API)] vs [OFFLINE DEAD ZONE (INDEXEDDB)] -->
+          <!-- Connectivity Toggle: [ONLINE 5G (REST API)] vs [OFFLINE DEAD ZONE (INDEXEDDB)] -->
           <button
             id="networkToggleBtn"
             onclick="toggleConnectivityMode()"
@@ -630,6 +630,7 @@
     const DB_NAME = 'hktd_survey_ch5_db';
     const DB_VERSION = 1;
     const STORE_NAME = 'survey_observations';
+    const FACE_API_MODEL_URL = 'https://cdn.jsdelivr.net/npm/@vladmandic/face-api/model';
 
     let idbInstance = null;
     let memoryRecords = [];
@@ -643,13 +644,23 @@
     let cvModelsReady = false;
     let clearConfirmArmed = false;
 
-    const FACE_API_MODEL_URL = 'https://cdn.jsdelivr.net/npm/@vladmandic/face-api/model';
+    function generateUUIDv4() {
+      if (window.crypto && crypto.randomUUID) {
+        return crypto.randomUUID();
       }
       return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
         const r = Math.random() * 16 | 0;
         const v = c === 'x' ? r : (r & 0x3 | 0x8);
         return v.toString(16);
       });
+    }
+
+    function isEmbeddedInIframe() {
+      try {
+        return window.self !== window.top;
+      } catch (_) {
+        return true;
+      }
     }
 
     function openSurveyIndexedDB() {
@@ -742,7 +753,6 @@
     async function initClientSideAgeModels() {
       const badge = document.getElementById('cvModelLoadBadge');
       try {
-        // Wait briefly for deferred face-api script if needed
         let retries = 0;
         while (typeof faceapi === 'undefined' && retries < 25) {
           await new Promise(r => setTimeout(r, 200));
@@ -757,7 +767,7 @@
         ]);
         cvModelsReady = true;
         badge.innerHTML = 'Model: <strong class="text-emerald-400">TinyFace + AgeNet Ready</strong>';
-      } catch (err) {
+      } catch (_) {
         cvModelsReady = false;
         badge.innerHTML = 'Model: <strong class="text-amber-300">Offline Heuristic Fallback</strong>';
       }
@@ -806,7 +816,7 @@
     }
 
     // -------------------------------------------------------------------------
-    // 4. WORKSPACE NAVIGATION & ARCHITECTURE MODAL
+    // 4. WORKSPACE NAVIGATION
     // -------------------------------------------------------------------------
     function switchWorkspace(target) {
       const wsA = document.getElementById('workspaceA');
@@ -1019,7 +1029,6 @@
       }).join('');
     }
 
-    // Export CSV / JSON with Web Crypto SHA-256 (`audit_export_logs.file_checksum_sha256`)
     async function exportSurveyAuditFile(format) {
       if (memoryRecords.length === 0) {
         showNonBlockingToast('CAT-01', 'Record at least 1 observation before exporting audit file', false);
@@ -1083,7 +1092,7 @@
     }
 
     // -------------------------------------------------------------------------
-    // 7. WORKSPACE B: CLIENT-SIDE EDGE CV PIPELINE (SECTION 5.3 / LISTING 5.3)
+    // 7. WORKSPACE B: CLIENT-SIDE EDGE CV PIPELINE (SECTION 5.3)
     // -------------------------------------------------------------------------
     const CV_PRESETS = {
       PRESET_1: {
@@ -1135,7 +1144,7 @@
         borderColor: '#BE123C',
         badgeBg: 'bg-rose-100 text-rose-950',
         headline: 'Ambiguous Profile — Manual Visual Verification Required',
-        guidance: 'Section 5.3.2 ethical safeguard: max(P) < 0.85 suppresses automated pre-selection. Perform polite visual verification and log as MANUAL.',
+        guidance: 'Ethical safeguard: max(P) < 0.85 suppresses automated pre-selection. Perform polite visual verification and log as MANUAL.',
         lowConfidence: true
       }
     };
@@ -1189,9 +1198,7 @@
       }
     }
 
-    // Converts continuous predicted age (years) into calibrated 3-bucket softmax probabilities
     function ageYearsToCohortProbabilities(estimatedAge, detectionScore) {
-      // Gaussian-style soft membership centered on Under-60 (<60), JoyYou (60-64), and Senior (65+)
       const wUnder60 = estimatedAge < 58
         ? Math.exp(-Math.pow((estimatedAge - 42) / 18, 2)) + 0.35
         : Math.exp(-Math.pow((estimatedAge - 55) / 5.5, 2));
@@ -1242,7 +1249,7 @@
         borderColor = '#BE123C';
         badgeBg = 'bg-rose-100 text-rose-950';
         headline = `Ambiguous Profile (~${Math.round(estimatedAge)} yrs, max(P)=${maxProb.toFixed(3)} < 0.85) — Manual Check`;
-        guidance = 'Section 5.3.2 ethical safeguard: confidence below 0.85 suppresses auto-selection. Perform polite visual verification and log as MANUAL.';
+        guidance = 'Ethical safeguard: confidence below 0.85 suppresses auto-selection. Perform polite visual verification and log as MANUAL.';
       }
 
       document.getElementById('telemetryLatencyMs').textContent = `${latencyMs} ms`;
@@ -1363,28 +1370,6 @@
       tick();
     }
 
-      try {
-        activeWebRTCStream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: 'environment', width: { ideal: 640 }, height: { ideal: 480 } },
-          audio: false
-        });
-        stopSyntheticCameraLoop();
-        synthCanvas.classList.add('hidden');
-        sandboxNotice.classList.add('hidden');
-        video.srcObject = activeWebRTCStream;
-        video.classList.remove('hidden');
-        stage.classList.add('hidden');
-        btnStart.classList.add('hidden');
-        btnStop.classList.remove('hidden');
-        sampleBar.classList.remove('hidden');
-        showNonBlockingToast('CAT-03', 'Live WebRTC camera stream active (0 ms retention mode)', false);
-      } catch (_) {
-        detectEmbeddedFrameContext();
-        sandboxNotice.classList.remove('hidden');
-        startSyntheticCameraFeed();
-      }
-    }
-
     function startSyntheticCameraFeed() {
       const video = document.getElementById('liveCameraVideo');
       const synthCanvas = document.getElementById('syntheticCameraCanvas');
@@ -1413,14 +1398,12 @@
         const h = synthCanvas.height || 360;
         tick += 0.04;
 
-        // Draw realistic MTR AFC gate concourse background
         const grad = ctx.createLinearGradient(0, 0, 0, h);
         grad.addColorStop(0, '#0f172a');
         grad.addColorStop(1, '#020617');
         ctx.fillStyle = grad;
         ctx.fillRect(0, 0, w, h);
 
-        // Subtle perspective gate lanes
         ctx.strokeStyle = 'rgba(56, 189, 248, 0.16)';
         ctx.lineWidth = 1.5;
         for (let i = 1; i <= 5; i++) {
@@ -1431,23 +1414,19 @@
           ctx.stroke();
         }
 
-        // Animated commuter silhouette passing through AFC gate
         const cx = w / 2 + Math.sin(tick) * 18;
         const cy = h / 2 + Math.cos(tick * 1.5) * 6;
 
-        // Shoulders
         ctx.fillStyle = '#1e293b';
         ctx.beginPath();
         ctx.ellipse(cx, cy + 68, 56, 36, 0, Math.PI, 0);
         ctx.fill();
 
-        // Head & facial landmarks
         ctx.fillStyle = '#cbd5e1';
         ctx.beginPath();
         ctx.arc(cx, cy - 8, 30, 0, Math.PI * 2);
         ctx.fill();
 
-        // BlazeFace 6-point landmark dots (eyes, nose, mouth, ears)
         ctx.fillStyle = '#10b981';
         const landmarks = [
           [cx - 11, cy - 14], [cx + 11, cy - 14],
@@ -1460,7 +1439,6 @@
           ctx.fill();
         });
 
-        // Top-left synthetic feed OSD timestamp
         ctx.fillStyle = '#34d399';
         ctx.font = 'bold 11px "JetBrains Mono", monospace';
         ctx.fillText(`SYNTHETIC GATE FEED (SANDBOX FALLBACK) • ${new Date().toISOString().slice(11, 23)}Z`, 12, 22);
@@ -1470,7 +1448,7 @@
 
       stopSyntheticCameraLoop();
       renderSyntheticFrame();
-      showNonBlockingToast('CAT-03', 'Sandbox detected: Running Synthetic AFC Gate Feed — tap "Sample Frame & Purge RAM"', false);
+      showNonBlockingToast('CAT-03', 'Sandbox detected: Running Synthetic AFC Gate Feed — tap "Sample & Lock Current Frame"', false);
     }
 
     function stopSyntheticCameraLoop() {
@@ -1496,7 +1474,6 @@
       document.getElementById('sampleFrameActionBar').classList.add('hidden');
     }
 
-    // Samples current live frame (or synthetic feed), runs neural inference, and purges volatile buffer
     async function captureAndPurgeTransientFrame() {
       const video = document.getElementById('liveCameraVideo');
       const synthCanvas = document.getElementById('syntheticCameraCanvas');
@@ -1511,7 +1488,6 @@
         return;
       }
 
-      // Synthetic fallback transient OffscreenCanvas capture & immediate 0 ms disposal
       const sourceEl = isLiveVideo ? video : synthCanvas;
       let offscreen = typeof OffscreenCanvas !== 'undefined'
         ? new OffscreenCanvas(128, 128)
@@ -1526,7 +1502,7 @@
       const presets = ['PRESET_1', 'PRESET_2', 'PRESET_3'];
       const chosen = presets[Math.floor(Math.random() * presets.length)];
       applyCommuterPreset(chosen);
-      showNonBlockingToast(CV_PRESETS[chosen].suggestedCat, 'tf.tidy() complete • WebGL textures disposed (0 ms retention)', false);
+      showNonBlockingToast(CV_PRESETS[chosen].suggestedCat, 'Transient frame inferred & purged (0 ms retention)', false);
     }
 
     function applyCommuterPreset(presetKey) {
