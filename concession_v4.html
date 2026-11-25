@@ -1131,6 +1131,19 @@
       },
       PRESET_3: {
         emoji: '🧑‍🦽',
+        title: 'Preset 3: Young Adult Commuter (Est. Age 34 + $2 Gate Light ON)',
+        subtitle: 'Under-60 profile detected while AFC $2 concession light illuminated',
+        probs: { under60: 0.892, age60to64: 0.068, age65Plus: 0.040 },
+        maxProb: 0.892,
+        suggestedCat: 'CAT-05',
+        borderColor: '#B45309',
+        badgeBg: 'bg-amber-100 text-amber-950',
+        headline: 'Flagged: CAT-05 — Other Eligible Class (Disability / Mental Health / Pregnancy)',
+        guidance: 'Passenger appears <60 with active $2 gate light. Verify non-age concession eligibility before confirming CAT-05.',
+        lowConfidence: false
+      }
+    };
+
     async function enableWebRTCCamera(preferredFacing = currentFacingMode) {
       const video = document.getElementById('liveCameraVideo');
       const overlay = document.getElementById('liveDetectionOverlay');
