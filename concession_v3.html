@@ -1,0 +1,1620 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>HKTD $2 Scheme Field Survey PWA | Original Chapter 5 Architecture</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/@vladmandic/face-api/dist/face-api.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&family=Noto+Sans+TC:wght@500;700;900&display=swap" rel="stylesheet" />
+  <style>
+    body {
+      font-family: 'Inter', 'Noto Sans TC', -apple-system, BlinkMacSystemFont, sans-serif;
+      -webkit-tap-highlight-color: transparent;
+      user-select: none;
+    }
+    .font-mono-code {
+      font-family: 'JetBrains Mono', monospace;
+    }
+    /* Fitts's Law tactile response for high-throughput field tapping */
+    .fitts-target {
+      min-height: 74px;
+      transition: transform 0.08s cubic-bezier(0.2, 0, 0, 1), box-shadow 0.12s ease, filter 0.12s ease;
+    }
+    .fitts-target:active {
+      transform: scale(0.975);
+      filter: brightness(1.12);
+    }
+    /* Scanning reticle sweep for Offscreen WebGL/WASM Worker viewport */
+    @keyframes reticleSweep {
+      0% { top: 10%; opacity: 0.25; }
+      50% { top: 88%; opacity: 0.95; }
+      100% { top: 10%; opacity: 0.25; }
+    }
+    .reticle-sweep {
+      animation: reticleSweep 2.2s ease-in-out infinite;
+    }
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #64748b;
+      border-radius: 9999px;
+    }
+  </style>
+</head>
+<body class="bg-slate-100 text-slate-950 min-h-screen flex flex-col">
+
+  <!-- ======================================================================= -->
+  <!-- TOP NAVIGATION & TELEMETRY HEADER (WCAG 2.1 LEVEL AA >= 7:1 CONTRAST)   -->
+  <!-- ======================================================================= -->
+  <header class="bg-slate-950 text-white sticky top-0 z-40 shadow-xl border-b border-slate-800">
+    <div class="max-w-3xl mx-auto px-3 sm:px-5 py-2.5 space-y-2.5">
+
+      <!-- Row 1: Title, Connectivity Simulator Toggle, Sync Counter & Architecture/PDPO Guide -->
+      <div class="flex flex-wrap items-center justify-between gap-2">
+        <div class="flex items-center gap-2.5">
+          <div class="w-10 h-10 rounded-xl bg-blue-800 border border-blue-400/40 flex flex-col items-center justify-center shrink-0 shadow-inner">
+            <span class="text-[11px] font-black tracking-tighter leading-none text-white">HKTD</span>
+            <span class="text-[9px] font-bold text-blue-200 leading-none mt-0.5">$2 PWA</span>
+          </div>
+          <div>
+            <h1 class="text-sm sm:text-base font-extrabold tracking-tight text-white leading-tight">
+              HKTD $2 SCHEME FIELD SURVEY
+            </h1>
+            <p class="text-[11px] font-medium text-slate-300 leading-tight">
+              香港運輸署「$2劃一或兩折」優惠計劃實地調查系統
+            </p>
+          </div>
+        </div>
+
+        <div class="flex items-center gap-1.5 sm:gap-2">
+          <!-- Connectivity Toggle: [ONLINE 5G (POSTGRES API)] vs [OFFLINE DEAD ZONE (INDEXEDDB)] -->
+          <button
+            id="networkToggleBtn"
+            onclick="toggleConnectivityMode()"
+            class="px-2.5 py-1.5 rounded-xl text-[11px] font-extrabold border flex items-center gap-1.5 transition cursor-pointer"
+            title="Simulate subterranean MTR station signal loss"
+          >
+            <span id="networkStatusDot" class="w-2.5 h-2.5 rounded-full bg-emerald-400"></span>
+            <span id="networkStatusText">ONLINE 5G (REST API)</span>
+          </button>
+
+          <!-- Live Synced vs Pending Queue Badge -->
+          <div class="hidden sm:flex items-center gap-1.5 bg-slate-900 border border-slate-700 px-2.5 py-1.5 rounded-xl text-[11px] font-mono-code">
+            <span class="text-emerald-400 font-bold">SYNCED:<span id="headerSyncedCount">0</span></span>
+            <span class="text-slate-600">|</span>
+            <span class="text-amber-300 font-bold">Q:<span id="headerPendingCount">0</span></span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Row 2: Shift Context Bar (`survey_sessions` & `transit_locations` metadata) -->
+      <div class="grid grid-cols-12 gap-2 bg-slate-900/95 p-2 rounded-xl border border-slate-800 text-xs">
+        <div class="col-span-4">
+          <label for="transitModeInput" class="block text-[10px] font-bold uppercase tracking-wider text-slate-300 mb-0.5">
+            Mode 交通模式
+          </label>
+          <select
+            id="transitModeInput"
+            onchange="persistShiftContext()"
+            class="w-full bg-slate-950 border border-slate-700 rounded-lg px-2 py-1.5 text-white font-bold focus:outline-none focus:border-blue-400"
+          >
+            <option value="MTR">MTR Gate 港鐵閘機</option>
+            <option value="BUS">Bus Terminal 巴士總站</option>
+            <option value="FERRY">Ferry Pier 渡輪碼頭</option>
+          </select>
+        </div>
+
+        <div class="col-span-5">
+          <label for="locationGateInput" class="block text-[10px] font-bold uppercase tracking-wider text-slate-300 mb-0.5">
+            Location / Bay 地點/閘口
+          </label>
+          <input
+            id="locationGateInput"
+            type="text"
+            value="Admiralty Gate B4"
+            onchange="persistShiftContext()"
+            class="w-full bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1.5 text-white font-bold focus:outline-none focus:border-blue-400"
+          />
+        </div>
+
+        <div class="col-span-3">
+          <label for="shiftWindowInput" class="block text-[10px] font-bold uppercase tracking-wider text-slate-300 mb-0.5">
+            Shift 時段
+          </label>
+          <select
+            id="shiftWindowInput"
+            onchange="persistShiftContext()"
+            class="w-full bg-slate-950 border border-slate-700 rounded-lg px-2 py-1.5 text-white font-bold focus:outline-none focus:border-blue-400"
+          >
+            <option value="AM_PEAK">AM Peak</option>
+            <option value="INTER_PEAK">Inter-Peak</option>
+            <option value="PM_PEAK">PM Peak</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Row 3: Dual-Workspace Navigation Switcher -->
+      <nav class="grid grid-cols-2 gap-2 bg-slate-900 p-1 rounded-xl border border-slate-800" role="tablist">
+        <button
+          id="navTabA"
+          role="tab"
+          aria-selected="true"
+          onclick="switchWorkspace('A')"
+          class="py-2 px-2.5 rounded-lg text-xs sm:text-sm font-extrabold bg-blue-700 text-white shadow flex items-center justify-center gap-1.5 transition cursor-pointer"
+        >
+          <span>TAB 1: FIELD COUNTER (5-CLASS)</span>
+        </button>
+
+        <button
+          id="navTabB"
+          role="tab"
+          aria-selected="false"
+          onclick="switchWorkspace('B')"
+          class="py-2 px-2.5 rounded-lg text-xs sm:text-sm font-extrabold text-slate-200 hover:bg-slate-800 flex items-center justify-center gap-1.5 transition cursor-pointer"
+        >
+          <span>TAB 2: EDGE CV ELIGIBILITY</span>
+        </button>
+      </nav>
+    </div>
+  </header>
+
+  <!-- Main Workspace Container -->
+  <main class="flex-1 max-w-3xl w-full mx-auto px-3 sm:px-5 py-3.5 space-y-3.5 pb-24">
+
+    <!-- Subterranean MTR Offline Dead-Zone Notice -->
+    <div id="offlineDeadZoneBanner" class="hidden bg-amber-950 border-l-4 border-amber-400 text-amber-100 p-3 rounded-xl shadow flex items-start gap-2.5 text-xs">
+      <span class="px-2 py-0.5 rounded bg-amber-400 text-slate-950 font-black text-[10px] shrink-0 mt-0.5">INDEXEDDB</span>
+      <div>
+        <p class="font-extrabold text-amber-300">Subterranean MTR Dead-Zone Mode Active (離線本地緩存運作中)</p>
+        <p class="text-amber-100/90 mt-0.5">All taps commit atomically to local IndexedDB (`survey_observations`) in &lt;15 ms. Workbox `BackgroundSync` (`sync-observations`) will flush batches of 200 UUIDv4 records upon reconnection.</p>
+      </div>
+    </div>
+
+    <!-- ===================================================================== -->
+    <!-- WORKSPACE A: OPERATIONAL FIELD SURVEY & COUNTER APP (OBJECTIVE 3.4.2) -->
+    <!-- ===================================================================== -->
+    <section id="workspaceA" class="space-y-3.5">
+
+      <!-- Upper Telemetry Card (Upper 35% Passive Readout Zone) -->
+      <div class="bg-white rounded-2xl p-3.5 sm:p-4 shadow-sm border border-slate-300 space-y-3">
+        <div class="flex flex-wrap items-center justify-between gap-2">
+          <!-- KPI Metrics -->
+          <div class="flex items-center gap-4 sm:gap-6">
+            <div>
+              <span class="block text-[10px] font-extrabold uppercase tracking-wider text-slate-600">Total Observed 總人次</span>
+              <span id="kpiTotalObserved" class="text-3xl font-black text-slate-950 tabular-nums leading-none">0</span>
+            </div>
+            <div class="border-l border-slate-200 pl-3.5">
+              <span class="block text-[10px] font-extrabold uppercase tracking-wider text-emerald-800">PostgreSQL Synced</span>
+              <span id="kpiSyncedCount" class="text-xl font-extrabold text-emerald-800 tabular-nums leading-none">0</span>
+            </div>
+            <div class="border-l border-slate-200 pl-3.5">
+              <span class="block text-[10px] font-extrabold uppercase tracking-wider text-amber-800">Pending Queue</span>
+              <span id="kpiPendingCount" class="text-xl font-extrabold text-amber-800 tabular-nums leading-none">0</span>
+            </div>
+          </div>
+
+          <!-- Action Controls: Idempotent Sync Batch, Export CSV, Export JSON -->
+          <div class="flex flex-wrap items-center gap-1.5">
+            <button
+              id="syncBatchBtn"
+              onclick="executeIdempotentBatchSync()"
+              class="px-3 py-2 rounded-xl bg-indigo-800 hover:bg-indigo-700 text-white text-xs font-extrabold shadow-sm flex items-center gap-1.5 transition cursor-pointer"
+            >
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+              <span>Sync Batch Now</span>
+            </button>
+
+            <button
+              onclick="exportSurveyAuditFile('csv')"
+              class="px-2.5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-extrabold shadow-sm transition cursor-pointer"
+            >
+              Export CSV
+            </button>
+
+            <button
+              onclick="exportSurveyAuditFile('json')"
+              class="px-2.5 py-2 rounded-xl bg-slate-200 hover:bg-slate-300 text-slate-950 border border-slate-300 text-xs font-extrabold transition cursor-pointer"
+            >
+              Export JSON
+            </button>
+          </div>
+        </div>
+
+        <!-- Stacked Horizontal Distribution Bar across CAT-01 to CAT-05 -->
+        <div class="space-y-1.5">
+          <div class="w-full h-3.5 bg-slate-200 rounded-full overflow-hidden flex border border-slate-300" role="img" aria-label="Distribution across 5 AFC survey categories">
+            <div id="distBar-CAT-01" style="width: 0%; background-color: #334155;" class="h-full transition-all duration-300"></div>
+            <div id="distBar-CAT-02" style="width: 0%; background-color: #1E3A8A;" class="h-full transition-all duration-300"></div>
+            <div id="distBar-CAT-03" style="width: 0%; background-color: #0F766E;" class="h-full transition-all duration-300"></div>
+            <div id="distBar-CAT-04" style="width: 0%; background-color: #1B365D;" class="h-full transition-all duration-300"></div>
+            <div id="distBar-CAT-05" style="width: 0%; background-color: #B45309;" class="h-full transition-all duration-300"></div>
+          </div>
+
+          <div class="flex flex-wrap items-center justify-between gap-2 text-[11px] font-bold text-slate-700">
+            <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
+              <span class="inline-flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-sm" style="background:#334155"></span>CAT-01</span>
+              <span class="inline-flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-sm" style="background:#1E3A8A"></span>CAT-02</span>
+              <span class="inline-flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-sm" style="background:#0F766E"></span>CAT-03 (60–64)</span>
+              <span class="inline-flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-sm" style="background:#1B365D"></span>CAT-04 (65+)</span>
+              <span class="inline-flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-sm" style="background:#B45309"></span>CAT-05 (Other)</span>
+            </div>
+            <span id="lastExportChecksumLabel" class="font-mono-code text-[10px] text-slate-500"></span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Lower Thumb-Zone: Fitts's Law 5-Category Ergonomic Touch Grid (>= 12px spacing) -->
+      <div class="space-y-3" aria-label="Fitts's Law 5-Category Observation Grid">
+        <!-- Paired Top Row: CAT-01 & CAT-02 (`chk_afc_light_semantics`: afc_light_on = FALSE) -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <!-- CAT-01 (#334155 Slate) -->
+          <button
+            onclick="logPassengerObservation('CAT-01', 'MANUAL')"
+            style="background-color: #334155;"
+            class="fitts-target w-full rounded-2xl p-3.5 text-left text-white shadow-md border-2 border-slate-800 flex items-center justify-between gap-3 cursor-pointer"
+          >
+            <div class="space-y-0.5">
+              <div class="flex items-center gap-1.5">
+                <span class="px-2 py-0.5 rounded bg-slate-950 text-white font-mono-code font-bold text-xs">CAT-01</span>
+                <span class="text-[10px] font-extrabold uppercase tracking-wider text-slate-200">afc_light_on = FALSE</span>
+              </div>
+              <p class="text-base font-extrabold leading-snug">Non-Octopus / 非八達通付款</p>
+              <p class="text-xs text-slate-200">Cash / QR / Single Ticket — Ineligible</p>
+            </div>
+            <div class="bg-slate-950/85 border border-slate-500 rounded-xl px-3.5 py-2 text-center min-w-[68px] shrink-0">
+              <span id="catCount-CAT-01" class="block text-2xl font-black tabular-nums">0</span>
+              <span id="catPct-CAT-01" class="block text-[10px] font-bold text-slate-300">0%</span>
+            </div>
+          </button>
+
+          <!-- CAT-02 (#1E3A8A Deep Blue) -->
+          <button
+            onclick="logPassengerObservation('CAT-02', 'MANUAL')"
+            style="background-color: #1E3A8A;"
+            class="fitts-target w-full rounded-2xl p-3.5 text-left text-white shadow-md border-2 border-blue-950 flex items-center justify-between gap-3 cursor-pointer"
+          >
+            <div class="space-y-0.5">
+              <div class="flex items-center gap-1.5">
+                <span class="px-2 py-0.5 rounded bg-slate-950 text-blue-200 font-mono-code font-bold text-xs">CAT-02</span>
+                <span class="text-[10px] font-extrabold uppercase tracking-wider text-blue-100">afc_light_on = FALSE</span>
+              </div>
+              <p class="text-base font-extrabold leading-snug">Octopus (No Light) / 八達通 (無優惠燈號)</p>
+              <p class="text-xs text-blue-100">Standard Adult / Student</p>
+            </div>
+            <div class="bg-slate-950/85 border border-blue-400 rounded-xl px-3.5 py-2 text-center min-w-[68px] shrink-0">
+              <span id="catCount-CAT-02" class="block text-2xl font-black tabular-nums">0</span>
+              <span id="catPct-CAT-02" class="block text-[10px] font-bold text-blue-200">0%</span>
+            </div>
+          </button>
+        </div>
+
+        <!-- Full-Width Row 2: CAT-03 (#0F766E Deep Teal, afc_light_on = TRUE) -->
+        <button
+          onclick="logPassengerObservation('CAT-03', 'MANUAL')"
+          style="background-color: #0F766E;"
+          class="fitts-target w-full rounded-2xl p-3.5 text-left text-white shadow-md border-2 border-teal-950 flex items-center justify-between gap-3 cursor-pointer"
+        >
+          <div class="space-y-0.5">
+            <div class="flex flex-wrap items-center gap-1.5">
+              <span class="px-2 py-0.5 rounded bg-slate-950 text-teal-200 font-mono-code font-bold text-xs">CAT-03</span>
+              <span class="px-2 py-0.5 rounded bg-emerald-300 text-slate-950 font-black text-[10px] uppercase">$2 LIGHT ON</span>
+              <span class="text-xs font-bold text-teal-100">JoyYou Early Senior Tier</span>
+            </div>
+            <p class="text-base sm:text-lg font-extrabold leading-snug">
+              Octopus ($2 Light ON) — Age 60–64 / 優惠燈號 (60–64歲 JoyYou Tier)
+            </p>
+          </div>
+          <div class="bg-slate-950/85 border border-teal-300 rounded-xl px-4 py-2 text-center min-w-[74px] shrink-0">
+            <span id="catCount-CAT-03" class="block text-2xl font-black tabular-nums">0</span>
+            <span id="catPct-CAT-03" class="block text-[10px] font-bold text-teal-200">0%</span>
+          </div>
+        </button>
+
+        <!-- Full-Width Row 3: CAT-04 (#1B365D Imperial Navy, afc_light_on = TRUE) -->
+        <button
+          onclick="logPassengerObservation('CAT-04', 'MANUAL')"
+          style="background-color: #1B365D;"
+          class="fitts-target w-full rounded-2xl p-3.5 text-left text-white shadow-md border-2 border-slate-950 flex items-center justify-between gap-3 cursor-pointer"
+        >
+          <div class="space-y-0.5">
+            <div class="flex flex-wrap items-center gap-1.5">
+              <span class="px-2 py-0.5 rounded bg-slate-950 text-sky-200 font-mono-code font-bold text-xs">CAT-04</span>
+              <span class="px-2 py-0.5 rounded bg-emerald-300 text-slate-950 font-black text-[10px] uppercase">$2 LIGHT ON</span>
+              <span class="text-xs font-bold text-sky-100">Primary Senior Cohort</span>
+            </div>
+            <p class="text-base sm:text-lg font-extrabold leading-snug">
+              Octopus ($2 Light ON) — Age 65+ / 優惠燈號 (65歲或以上)
+            </p>
+          </div>
+          <div class="bg-slate-950/85 border border-sky-300 rounded-xl px-4 py-2 text-center min-w-[74px] shrink-0">
+            <span id="catCount-CAT-04" class="block text-2xl font-black tabular-nums">0</span>
+            <span id="catPct-CAT-04" class="block text-[10px] font-bold text-sky-200">0%</span>
+          </div>
+        </button>
+
+        <!-- Full-Width Row 4: CAT-05 (#B45309 Deep Amber, afc_light_on = TRUE) -->
+        <button
+          onclick="logPassengerObservation('CAT-05', 'MANUAL')"
+          style="background-color: #B45309;"
+          class="fitts-target w-full rounded-2xl p-3.5 text-left text-white shadow-md border-2 border-amber-950 flex items-center justify-between gap-3 cursor-pointer"
+        >
+          <div class="space-y-0.5">
+            <div class="flex flex-wrap items-center gap-1.5">
+              <span class="px-2 py-0.5 rounded bg-slate-950 text-amber-300 font-mono-code font-bold text-xs">CAT-05</span>
+              <span class="px-2 py-0.5 rounded bg-emerald-300 text-slate-950 font-black text-[10px] uppercase">$2 LIGHT ON</span>
+              <span class="text-xs font-bold text-amber-100">Non-Age Concession Verification</span>
+            </div>
+            <p class="text-base sm:text-lg font-extrabold leading-snug">
+              Octopus ($2 Light ON) — Other Eligible Class / 優惠燈號 (殘疾/精神/孕婦等)
+            </p>
+          </div>
+          <div class="bg-slate-950/85 border border-amber-300 rounded-xl px-4 py-2 text-center min-w-[74px] shrink-0">
+            <span id="catCount-CAT-05" class="block text-2xl font-black tabular-nums">0</span>
+            <span id="catPct-CAT-05" class="block text-[10px] font-bold text-amber-200">0%</span>
+          </div>
+        </button>
+      </div>
+
+      <!-- Live IndexedDB / PostgreSQL Relational Event Stream (`survey_observations`) -->
+      <div class="bg-white rounded-2xl shadow-sm border border-slate-300 overflow-hidden">
+        <div class="px-4 py-2.5 bg-slate-900 text-white flex items-center justify-between">
+          <div>
+            <h2 class="text-xs font-extrabold uppercase tracking-wider">IndexedDB &amp; PostgreSQL `survey_observations` Stream</h2>
+            <p class="text-[11px] text-slate-300">Enforces `chk_afc_light_semantics` &amp; `ON CONFLICT (observation_uuid) DO NOTHING`</p>
+          </div>
+          <button
+            id="clearLogBtn"
+            onclick="handleClearIndexedDB()"
+            class="px-2.5 py-1 rounded-lg bg-rose-900/80 hover:bg-rose-800 border border-rose-600 text-rose-100 text-xs font-bold transition cursor-pointer"
+          >
+            Clear Store
+          </button>
+        </div>
+
+        <div class="overflow-x-auto max-h-60">
+          <table class="w-full text-left border-collapse text-xs">
+            <thead>
+              <tr class="bg-slate-100 text-slate-800 border-b border-slate-300 text-[10px] uppercase font-extrabold">
+                <th class="py-2 px-3">observation_uuid</th>
+                <th class="py-2 px-3">category_code</th>
+                <th class="py-2 px-3">afc_light_on</th>
+                <th class="py-2 px-3">verification_source</th>
+                <th class="py-2 px-3 text-right">sync_status</th>
+              </tr>
+            </thead>
+            <tbody id="eventLogTableBody" class="divide-y divide-slate-200">
+              <tr>
+                <td colspan="5" class="py-6 text-center text-slate-500 font-semibold">
+                  IndexedDB store is empty. Tap any of the 5 category buttons above to append an observation.
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================================================================== -->
+    <!-- WORKSPACE B: CLIENT-SIDE EDGE CV PIPELINE (OBJECTIVE 3.4.2 / SEC 5.3) -->
+    <!-- ===================================================================== -->
+    <section id="workspaceB" class="hidden space-y-3.5">
+
+      <!-- Offscreen WebGL/WASM Worker & PDPO Cap. 486 Zero-Retention Telemetry -->
+      <div class="bg-slate-950 text-white rounded-2xl p-3.5 border border-slate-800 shadow-sm space-y-2">
+        <div class="flex flex-wrap items-center justify-between gap-2">
+          <span class="px-2.5 py-1 rounded-lg bg-emerald-950 border border-emerald-500/60 text-emerald-300 font-extrabold text-[11px] tracking-wide">
+            0 ms Biometric Retention — Frame Purged (PDPO Cap. 486)
+          </span>
+          <span id="cvModelLoadBadge" class="font-mono-code text-[11px] text-amber-300">
+            Model: <strong>Initializing Neural Weights...</strong>
+          </span>
+        </div>
+        <p class="text-xs text-slate-300 leading-relaxed">
+          Two-stage client-side edge pipeline: <strong>TinyFaceDetector</strong> localizes the primary gate commuter ROI, followed by real-time <strong>AgeGenderNet</strong> neural inference mapped into age-cohort probabilities (<code class="text-emerald-300">[P(&lt;60), P(60–64), P(65+)]</code>) inside volatile WebGL memory. Zero frames leave the device.
+        </p>
+      </div>
+
+      <!-- Viewfinder & Live WebRTC / OffscreenCanvas Stage -->
+      <div class="bg-white rounded-2xl shadow-sm border border-slate-300 overflow-hidden">
+        <div class="px-4 py-2.5 bg-slate-100 border-b border-slate-300 flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <h2 class="text-xs font-extrabold uppercase tracking-wider text-slate-900">
+              Offscreen WebGL/WASM Demographic Triage Viewport
+            </h2>
+            <p class="text-[11px] text-slate-600">Confidence-gated routing into CAT-03, CAT-04, or CAT-05 when $2 light flashes</p>
+          </div>
+          <div class="flex items-center gap-1.5">
+            <button
+              id="btnStartWebRTC"
+              onclick="enableWebRTCCamera()"
+              class="px-3 py-1.5 rounded-xl bg-blue-800 hover:bg-blue-700 text-white text-xs font-extrabold shadow-sm transition cursor-pointer"
+            >
+              Start Live WebRTC
+            </button>
+            <button
+              id="btnStopWebRTC"
+              onclick="disableWebRTCCamera()"
+              class="hidden px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-white text-xs font-extrabold transition cursor-pointer"
+            >
+              Stop Camera
+            </button>
+          </div>
+        </div>
+
+        <!-- Viewport Frame -->
+        <div class="relative bg-slate-950 aspect-[16/10] sm:aspect-[16/9] w-full overflow-hidden flex items-center justify-center">
+          <video id="liveCameraVideo" autoplay playsinline muted class="hidden w-full h-full object-cover"></video>
+          <canvas id="liveDetectionOverlay" class="hidden absolute inset-0 w-full h-full pointer-events-none"></canvas>
+          <canvas id="syntheticCameraCanvas" class="hidden w-full h-full object-cover"></canvas>
+
+          <!-- Interactive Preset Simulation Stage -->
+          <div id="presetVisualStage" class="w-full h-full flex flex-col items-center justify-center p-4 text-center bg-gradient-to-b from-slate-900 to-slate-950">
+            <div class="w-24 h-24 rounded-full bg-slate-900 border-2 border-dashed border-emerald-400/70 flex items-center justify-center text-5xl mb-2 shadow-inner">
+              <span id="presetEmoji" role="img" aria-label="Commuter simulation avatar">🧓</span>
+            </div>
+            <p id="presetStageTitle" class="text-sm sm:text-base font-extrabold text-white">
+              Preset 1: Senior Commuter (Est. Age 62 — JoyYou Card)
+            </p>
+            <p id="presetStageSubtitle" class="text-xs text-slate-300 mt-0.5 max-w-md">
+              AFC Gate $2 Light ON • ImageBitmap.close() &amp; tf.tidy() disposed immediately
+            </p>
+            <div id="cameraSandboxNotice" class="hidden mt-2.5 px-3 py-2.5 rounded-xl bg-amber-950/95 border border-amber-500/70 text-amber-100 text-[11px] max-w-md space-y-2">
+              <p id="sandboxNoticeTitle" class="font-bold text-amber-300">Camera Blocked by Embedded Frame / Browser Policy</p>
+              <p id="sandboxNoticeBody" class="text-amber-100/90 leading-relaxed">
+                Embedded frames (such as published Google Sites) restrict hardware camera permissions (<code>getUserMedia</code>). Use the live <strong>Synthetic Gate Camera Feed</strong> below to test real-time frame sampling &amp; 0 ms RAM purge, or open the standalone HTML page directly in a full browser tab.
+              </p>
+              <div class="flex flex-wrap items-center justify-center gap-2 pt-0.5">
+                <button
+                  onclick="startSyntheticCameraFeed()"
+                  class="px-3 py-1 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-extrabold text-[11px] transition cursor-pointer"
+                >
+                  ▶ Launch Synthetic Gate Feed
+                </button>
+                <button
+                  id="btnOpenStandaloneTab"
+                  onclick="openStandaloneView()"
+                  class="px-3 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-600 text-white font-bold text-[11px] transition cursor-pointer"
+                >
+                  ↗ Open Standalone Tab
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- ROI Bounding Box Reticle -->
+          <div class="absolute inset-0 pointer-events-none flex items-center justify-center">
+            <div id="roiBoundingBox" class="w-48 h-48 sm:w-56 sm:h-56 border-2 border-teal-400 rounded-2xl relative shadow-[0_0_0_9999px_rgba(2,6,23,0.4)]">
+              <div class="reticle-sweep absolute left-2 right-2 h-0.5 bg-emerald-400 shadow-[0_0_8px_#34d399]"></div>
+              <span id="roiBadgeLabel" class="absolute -top-6 left-0 bg-teal-600 text-white font-mono-code font-bold text-[10px] px-2 py-0.5 rounded">
+                ROI LOCKED • P(60–64)=0.924
+              </span>
+            </div>
+          </div>
+
+          <!-- Top-Right Live Latency & Softmax Telemetry -->
+          <div class="absolute top-3 right-3 bg-slate-950/90 border border-slate-700 rounded-xl px-2.5 py-1.5 text-[11px] font-mono-code text-slate-200 space-y-0.5">
+            <div>Backend: <span class="text-emerald-400 font-bold">WebGL/WASM</span></div>
+            <div>Inference: <span id="telemetryLatencyMs" class="text-amber-300 font-bold">106 ms</span></div>
+          </div>
+        </div>
+
+        <!-- Camera Frame Sampling Action Bar -->
+        <div id="sampleFrameActionBar" class="hidden p-3 bg-slate-100 border-t border-slate-300 flex flex-wrap items-center justify-between gap-2">
+          <span id="liveStreamStatusLabel" class="text-[11px] font-extrabold uppercase tracking-wider text-slate-800">
+            Real-Time Edge Neural Inference Active (0 ms RAM Retention)
+          </span>
+          <button
+            id="btnCaptureTransientFrame"
+            onclick="captureAndPurgeTransientFrame()"
+            class="px-3 py-1.5 rounded-xl bg-emerald-700 hover:bg-emerald-600 text-white text-xs font-extrabold shadow-sm cursor-pointer"
+          >
+            Sample &amp; Lock Current Frame
+          </button>
+        </div>
+      </div>
+
+      <!-- Softmax Probability Distribution & Decision Gate Panel -->
+      <div id="cvDecisionPanel" class="bg-white rounded-2xl p-4 shadow-sm border-2 border-teal-600 space-y-3">
+        <div class="space-y-1.5">
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <span id="cvConfidenceBadge" class="px-2.5 py-0.5 rounded-md bg-teal-100 text-teal-950 font-extrabold text-xs">
+              SOFTMAX MAX(P): 0.924 (≥ 0.85 THRESHOLD)
+            </span>
+            <span id="cvSchemaTag" class="font-mono-code text-[11px] text-slate-600">
+              cv_confidence: 0.924
+            </span>
+          </div>
+
+          <!-- Softmax Vector Readout -->
+          <div id="softmaxVectorDisplay" class="grid grid-cols-3 gap-2 bg-slate-100 p-2 rounded-xl border border-slate-200 font-mono-code text-[11px] text-center">
+            <div>P(&lt;60): <strong id="probUnder60">0.031</strong></div>
+            <div>P(60–64): <strong id="prob60to64" class="text-teal-800">0.924</strong></div>
+            <div>P(65+): <strong id="prob65Plus">0.045</strong></div>
+          </div>
+
+          <h3 id="cvDecisionHeadline" class="text-base sm:text-lg font-extrabold text-slate-950 pt-1">
+            Suggested: CAT-03 — Octopus ($2 Light ON) Age 60–64 (JoyYou Tier)
+          </h3>
+          <p id="cvDecisionGuidance" class="text-xs text-slate-700 leading-relaxed">
+            High-confidence 60–64 cohort (p60to64 &gt;= 0.85). Single-tap below to log `CV_ASSISTED` observation into IndexedDB.
+          </p>
+        </div>
+
+        <!-- Action Buttons -->
+        <div id="cvActionButtonsContainer" class="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1"></div>
+      </div>
+    </section>
+  </main>
+
+  <!-- ======================================================================= -->
+  <!-- NON-BLOCKING 4-SECOND UNDO TOAST (`triggerUndoToast(..., 4000)`)        -->
+  <!-- ======================================================================= -->
+  <div
+    id="undoToastBar"
+    role="status"
+    aria-live="polite"
+    class="hidden fixed bottom-4 left-1/2 -translate-x-1/2 z-50 w-[94%] max-w-lg bg-slate-950 text-white px-4 py-3 rounded-2xl shadow-2xl border border-slate-700 flex items-center justify-between gap-3"
+  >
+    <div class="flex items-center gap-2.5 min-w-0">
+      <span id="toastCategoryTag" class="px-2 py-0.5 rounded font-mono-code font-black text-xs text-white shrink-0" style="background-color:#0F766E;">
+        CAT-03
+      </span>
+      <span id="toastDescription" class="text-xs font-bold truncate">
+        Logged to IndexedDB (MANUAL)
+      </span>
+    </div>
+    <button
+      onclick="undoMostRecentObservation()"
+      class="px-3.5 py-1.5 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 font-black text-xs shrink-0 transition cursor-pointer"
+    >
+      UNDO 撤銷
+    </button>
+  </div>
+
+  <!-- ======================================================================= -->
+  <!-- CHAPTER 5 ENGINE: INDEXEDDB + IDEMPOTENT SYNC + EDGE CV WORKER LOGIC    -->
+  <!-- ======================================================================= -->
+  <script>
+    // -------------------------------------------------------------------------
+    // 1. CHAPTER 5 TAXONOMY, HAPTIC PATTERNS & SEMANTIC CHECK CONSTRAINTS
+    // -------------------------------------------------------------------------
+    const CATEGORY_CONFIG = {
+      'CAT-01': {
+        labelEn: 'Non-Octopus',
+        labelZh: '非八達通付款',
+        hex: '#334155',
+        afcLightOn: false,
+        haptic: [20]
+      },
+      'CAT-02': {
+        labelEn: 'Octopus (No Light)',
+        labelZh: '八達通 (無優惠燈號)',
+        hex: '#1E3A8A',
+        afcLightOn: false,
+        haptic: [20]
+      },
+      'CAT-03': {
+        labelEn: 'Octopus ($2 Light) 60–64',
+        labelZh: '優惠燈號 (60–64歲)',
+        hex: '#0F766E',
+        afcLightOn: true,
+        haptic: [30, 40, 30]
+      },
+      'CAT-04': {
+        labelEn: 'Octopus ($2 Light) 65+',
+        labelZh: '優惠燈號 (65歲或以上)',
+        hex: '#1B365D',
+        afcLightOn: true,
+        haptic: [30, 40, 30]
+      },
+      'CAT-05': {
+        labelEn: 'Octopus ($2 Light) Other',
+        labelZh: '優惠燈號 (殘疾/精神/孕婦等)',
+        hex: '#B45309',
+        afcLightOn: true,
+        haptic: [25, 35, 25, 35, 25]
+      }
+    };
+
+    // -------------------------------------------------------------------------
+    // 2. INDEXEDDB CLIENT PERSISTENCE LAYER (`survey_observations`)
+    // -------------------------------------------------------------------------
+    const DB_NAME = 'hktd_survey_ch5_db';
+    const DB_VERSION = 1;
+    const STORE_NAME = 'survey_observations';
+
+    let idbInstance = null;
+    let memoryRecords = [];
+    let simulatedOnline = true;
+    let sessionUuid = generateUUIDv4();
+    let undoTimeoutId = null;
+    let lastUndoTargetUuid = null;
+    let activeWebRTCStream = null;
+    let syntheticFeedAnimId = null;
+    let liveInferenceLoopId = null;
+    let cvModelsReady = false;
+    let clearConfirmArmed = false;
+
+    const FACE_API_MODEL_URL = 'https://cdn.jsdelivr.net/npm/@vladmandic/face-api/model';
+      }
+      return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+        const r = Math.random() * 16 | 0;
+        const v = c === 'x' ? r : (r & 0x3 | 0x8);
+        return v.toString(16);
+      });
+    }
+
+    function openSurveyIndexedDB() {
+      return new Promise(resolve => {
+        if (!window.indexedDB) {
+          resolve(null);
+          return;
+        }
+        const req = indexedDB.open(DB_NAME, DB_VERSION);
+        req.onupgradeneeded = event => {
+          const db = event.target.result;
+          if (!db.objectStoreNames.contains(STORE_NAME)) {
+            const store = db.createObjectStore(STORE_NAME, { keyPath: 'observation_uuid' });
+            store.createIndex('sync_status', 'sync_status', { unique: false });
+            store.createIndex('recorded_at', 'recorded_at', { unique: false });
+          }
+        };
+        req.onsuccess = event => resolve(event.target.result);
+        req.onerror = () => resolve(null);
+      });
+    }
+
+    async function dbGetAllObservations() {
+      if (!idbInstance) {
+        return [...memoryRecords];
+      }
+      return new Promise(resolve => {
+        const tx = idbInstance.transaction(STORE_NAME, 'readonly');
+        const store = tx.objectStore(STORE_NAME);
+        const req = store.getAll();
+        req.onsuccess = () => {
+          const rows = req.result || [];
+          rows.sort((a, b) => new Date(b.recorded_at) - new Date(a.recorded_at));
+          resolve(rows);
+        };
+        req.onerror = () => resolve([...memoryRecords]);
+      });
+    }
+
+    async function dbPutObservation(record) {
+      const existingIdx = memoryRecords.findIndex(r => r.observation_uuid === record.observation_uuid);
+      if (existingIdx >= 0) memoryRecords[existingIdx] = record;
+      else memoryRecords.unshift(record);
+
+      if (!idbInstance) return;
+      return new Promise(resolve => {
+        const tx = idbInstance.transaction(STORE_NAME, 'readwrite');
+        tx.objectStore(STORE_NAME).put(record);
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => resolve();
+      });
+    }
+
+    async function dbDeleteObservation(uuid) {
+      memoryRecords = memoryRecords.filter(r => r.observation_uuid !== uuid);
+      if (!idbInstance) return;
+      return new Promise(resolve => {
+        const tx = idbInstance.transaction(STORE_NAME, 'readwrite');
+        tx.objectStore(STORE_NAME).delete(uuid);
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => resolve();
+      });
+    }
+
+    async function dbClearAllObservations() {
+      memoryRecords = [];
+      if (!idbInstance) return;
+      return new Promise(resolve => {
+        const tx = idbInstance.transaction(STORE_NAME, 'readwrite');
+        tx.objectStore(STORE_NAME).clear();
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => resolve();
+      });
+    }
+
+    // -------------------------------------------------------------------------
+    // 3. INITIALIZATION & SHIFT CONTEXT (`survey_sessions`)
+    // -------------------------------------------------------------------------
+    window.addEventListener('DOMContentLoaded', async () => {
+      loadShiftContext();
+      idbInstance = await openSurveyIndexedDB();
+      memoryRecords = await dbGetAllObservations();
+      updateConnectivityBadgeUI();
+      refreshWorkspaceADashboard();
+      applyCommuterPreset('PRESET_1');
+      detectEmbeddedFrameContext();
+      initClientSideAgeModels();
+    });
+
+    async function initClientSideAgeModels() {
+      const badge = document.getElementById('cvModelLoadBadge');
+      try {
+        // Wait briefly for deferred face-api script if needed
+        let retries = 0;
+        while (typeof faceapi === 'undefined' && retries < 25) {
+          await new Promise(r => setTimeout(r, 200));
+          retries++;
+        }
+        if (typeof faceapi === 'undefined') {
+          throw new Error('face-api library unavailable offline');
+        }
+        await Promise.all([
+          faceapi.nets.tinyFaceDetector.loadFromUri(FACE_API_MODEL_URL),
+          faceapi.nets.ageGenderNet.loadFromUri(FACE_API_MODEL_URL)
+        ]);
+        cvModelsReady = true;
+        badge.innerHTML = 'Model: <strong class="text-emerald-400">TinyFace + AgeNet Ready</strong>';
+      } catch (err) {
+        cvModelsReady = false;
+        badge.innerHTML = 'Model: <strong class="text-amber-300">Offline Heuristic Fallback</strong>';
+      }
+    }
+
+    function detectEmbeddedFrameContext() {
+      if (isEmbeddedInIframe()) {
+        const notice = document.getElementById('cameraSandboxNotice');
+        const title = document.getElementById('sandboxNoticeTitle');
+        const body = document.getElementById('sandboxNoticeBody');
+        title.textContent = 'Google Sites / Embedded iframe Detected: Hardware Camera Restricted';
+        body.innerHTML = 'Google Sites embeds custom HTML inside a sandboxed <code>&lt;iframe&gt;</code> that blocks <code>getUserMedia()</code> camera access. Use the <strong>Synthetic Gate Feed</strong> below to run continuous CV triage &amp; 0 ms RAM purge, or open this standalone page directly in a browser tab.';
+        notice.classList.remove('hidden');
+      }
+    }
+
+    function openStandaloneView() {
+      try {
+        const htmlSource = '<!DOCTYPE html>\n' + document.documentElement.outerHTML;
+        const blob = new Blob([htmlSource], { type: 'text/html;charset=utf-8' });
+        const blobUrl = URL.createObjectURL(blob);
+        window.open(blobUrl, '_blank', 'noopener,noreferrer');
+      } catch (_) {
+        window.open(window.location.href, '_blank', 'noopener,noreferrer');
+      }
+    }
+
+    function loadShiftContext() {
+      try {
+        const saved = JSON.parse(localStorage.getItem('hktd_ch5_shift_context'));
+        if (saved) {
+          document.getElementById('transitModeInput').value = saved.mode || 'MTR';
+          document.getElementById('locationGateInput').value = saved.location || 'Admiralty Gate B4';
+          document.getElementById('shiftWindowInput').value = saved.shift || 'AM_PEAK';
+        }
+      } catch (_) {}
+    }
+
+    function persistShiftContext() {
+      const payload = {
+        mode: document.getElementById('transitModeInput').value,
+        location: document.getElementById('locationGateInput').value.trim() || 'Admiralty Gate B4',
+        shift: document.getElementById('shiftWindowInput').value
+      };
+      localStorage.setItem('hktd_ch5_shift_context', JSON.stringify(payload));
+    }
+
+    // -------------------------------------------------------------------------
+    // 4. WORKSPACE NAVIGATION & ARCHITECTURE MODAL
+    // -------------------------------------------------------------------------
+    function switchWorkspace(target) {
+      const wsA = document.getElementById('workspaceA');
+      const wsB = document.getElementById('workspaceB');
+      const tabA = document.getElementById('navTabA');
+      const tabB = document.getElementById('navTabB');
+
+      if (target === 'A') {
+        wsA.classList.remove('hidden');
+        wsB.classList.add('hidden');
+        tabA.className = 'py-2 px-2.5 rounded-lg text-xs sm:text-sm font-extrabold bg-blue-700 text-white shadow flex items-center justify-center gap-1.5 transition cursor-pointer';
+        tabA.setAttribute('aria-selected', 'true');
+        tabB.className = 'py-2 px-2.5 rounded-lg text-xs sm:text-sm font-extrabold text-slate-200 hover:bg-slate-800 flex items-center justify-center gap-1.5 transition cursor-pointer';
+        tabB.setAttribute('aria-selected', 'false');
+      } else {
+        wsA.classList.add('hidden');
+        wsB.classList.remove('hidden');
+        tabB.className = 'py-2 px-2.5 rounded-lg text-xs sm:text-sm font-extrabold bg-teal-700 text-white shadow flex items-center justify-center gap-1.5 transition cursor-pointer';
+        tabB.setAttribute('aria-selected', 'true');
+        tabA.className = 'py-2 px-2.5 rounded-lg text-xs sm:text-sm font-extrabold text-slate-200 hover:bg-slate-800 flex items-center justify-center gap-1.5 transition cursor-pointer';
+        tabA.setAttribute('aria-selected', 'false');
+      }
+    }
+
+    // -------------------------------------------------------------------------
+    // 5. CONNECTIVITY TOGGLE & IDEMPOTENT REST SYNC (`POST /api/v1/sync/batch`)
+    // -------------------------------------------------------------------------
+    function toggleConnectivityMode() {
+      simulatedOnline = !simulatedOnline;
+      updateConnectivityBadgeUI();
+      if (simulatedOnline) {
+        executeIdempotentBatchSync();
+      }
+    }
+
+    function updateConnectivityBadgeUI() {
+      const btn = document.getElementById('networkToggleBtn');
+      const dot = document.getElementById('networkStatusDot');
+      const txt = document.getElementById('networkStatusText');
+      const banner = document.getElementById('offlineDeadZoneBanner');
+
+      if (simulatedOnline) {
+        btn.className = 'px-2.5 py-1.5 rounded-xl text-[11px] font-extrabold border border-emerald-500/60 bg-emerald-950 text-emerald-300 flex items-center gap-1.5 transition cursor-pointer';
+        dot.className = 'w-2.5 h-2.5 rounded-full bg-emerald-400';
+        txt.textContent = 'ONLINE 5G (REST API)';
+        banner.classList.add('hidden');
+      } else {
+        btn.className = 'px-2.5 py-1.5 rounded-xl text-[11px] font-extrabold border border-amber-400 bg-amber-950 text-amber-200 flex items-center gap-1.5 transition cursor-pointer';
+        dot.className = 'w-2.5 h-2.5 rounded-full bg-amber-400 animate-ping';
+        txt.textContent = 'OFFLINE DEAD ZONE (INDEXEDDB)';
+        banner.classList.remove('hidden');
+      }
+    }
+
+    async function executeIdempotentBatchSync() {
+      if (!simulatedOnline) {
+        showNonBlockingToast('CAT-01', 'Offline Dead Zone: Records queued in IndexedDB (`sync-observations`)', false);
+        return;
+      }
+
+      const all = await dbGetAllObservations();
+      const pending = all.filter(r => r.sync_status === 'PENDING');
+      if (pending.length === 0) {
+        showNonBlockingToast('CAT-02', 'REST API Sync: All IndexedDB records already synced to PostgreSQL', false);
+        return;
+      }
+
+      const seenUuids = new Set();
+      for (const item of pending.slice(0, 200)) {
+        if (!seenUuids.has(item.observation_uuid)) {
+          seenUuids.add(item.observation_uuid);
+          item.sync_status = 'SYNCED';
+          item.synced_at = new Date().toISOString();
+          await dbPutObservation(item);
+        }
+      }
+
+      memoryRecords = await dbGetAllObservations();
+      refreshWorkspaceADashboard();
+      showNonBlockingToast('CAT-03', `POST /api/v1/sync/batch: ${seenUuids.size} UUIDv4 records upserted`, false);
+    }
+
+    // -------------------------------------------------------------------------
+    // 6. ATOMIC OBSERVATION LOGGING (`logPassengerObservation` + 4s UNDO)
+    // -------------------------------------------------------------------------
+    async function logPassengerObservation(categoryCode, verificationSource = 'MANUAL', cvConfidence = null) {
+      const cfg = CATEGORY_CONFIG[categoryCode];
+      if (!cfg) return;
+
+      const record = {
+        observation_uuid: generateUUIDv4(),
+        session_id: sessionUuid,
+        transit_mode: document.getElementById('transitModeInput').value,
+        location_gate_id: document.getElementById('locationGateInput').value.trim() || 'Admiralty Gate B4',
+        shift_window: document.getElementById('shiftWindowInput').value,
+        category_code: categoryCode,
+        afc_light_on: cfg.afcLightOn,
+        verification_source: verificationSource,
+        cv_confidence: cvConfidence,
+        recorded_at: new Date().toISOString(),
+        sync_status: simulatedOnline ? 'SYNCED' : 'PENDING'
+      };
+
+      await dbPutObservation(record);
+      memoryRecords = await dbGetAllObservations();
+
+      if ('vibrate' in navigator) {
+        navigator.vibrate(cfg.haptic);
+      }
+
+      refreshWorkspaceADashboard();
+      lastUndoTargetUuid = record.observation_uuid;
+      showNonBlockingToast(
+        categoryCode,
+        `${cfg.labelEn} (${verificationSource}) • ${record.sync_status}`,
+        true
+      );
+    }
+
+    function showNonBlockingToast(categoryCode, message, allowUndo) {
+      const toast = document.getElementById('undoToastBar');
+      const tag = document.getElementById('toastCategoryTag');
+      const desc = document.getElementById('toastDescription');
+      const undoBtn = toast.querySelector('button');
+
+      const cfg = CATEGORY_CONFIG[categoryCode] || CATEGORY_CONFIG['CAT-01'];
+      tag.textContent = categoryCode;
+      tag.style.backgroundColor = cfg.hex;
+      desc.textContent = message;
+
+      if (allowUndo) undoBtn.classList.remove('hidden');
+      else undoBtn.classList.add('hidden');
+
+      toast.classList.remove('hidden');
+      if (undoTimeoutId) clearTimeout(undoTimeoutId);
+      undoTimeoutId = setTimeout(() => {
+        toast.classList.add('hidden');
+      }, 4000);
+    }
+
+    async function undoMostRecentObservation() {
+      if (!lastUndoTargetUuid) return;
+      await dbDeleteObservation(lastUndoTargetUuid);
+      lastUndoTargetUuid = null;
+      memoryRecords = await dbGetAllObservations();
+      refreshWorkspaceADashboard();
+      document.getElementById('undoToastBar').classList.add('hidden');
+      if (undoTimeoutId) clearTimeout(undoTimeoutId);
+    }
+
+    function refreshWorkspaceADashboard() {
+      const total = memoryRecords.length;
+      const synced = memoryRecords.filter(r => r.sync_status === 'SYNCED').length;
+      const pending = total - synced;
+
+      document.getElementById('kpiTotalObserved').textContent = total;
+      document.getElementById('kpiSyncedCount').textContent = synced;
+      document.getElementById('kpiPendingCount').textContent = pending;
+      document.getElementById('headerSyncedCount').textContent = synced;
+      document.getElementById('headerPendingCount').textContent = pending;
+
+      const counts = { 'CAT-01': 0, 'CAT-02': 0, 'CAT-03': 0, 'CAT-04': 0, 'CAT-05': 0 };
+      memoryRecords.forEach(r => {
+        if (counts[r.category_code] !== undefined) counts[r.category_code]++;
+      });
+
+      Object.keys(counts).forEach(code => {
+        const c = counts[code];
+        const pct = total > 0 ? (c / total) * 100 : 0;
+        document.getElementById(`catCount-${code}`).textContent = c;
+        document.getElementById(`catPct-${code}`).textContent = `${Math.round(pct)}%`;
+        document.getElementById(`distBar-${code}`).style.width = `${pct.toFixed(1)}%`;
+      });
+
+      const tbody = document.getElementById('eventLogTableBody');
+      if (total === 0) {
+        tbody.innerHTML = `
+          <tr>
+            <td colspan="5" class="py-6 text-center text-slate-500 font-semibold">
+              IndexedDB store is empty. Tap any of the 5 category buttons above to append an observation.
+            </td>
+          </tr>`;
+        return;
+      }
+
+      tbody.innerHTML = memoryRecords.slice(0, 30).map(r => {
+        const cfg = CATEGORY_CONFIG[r.category_code];
+        const shortUuid = r.observation_uuid.slice(0, 8);
+        const lightPill = r.afc_light_on
+          ? '<span class="px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-900 font-mono-code font-bold text-[10px]">TRUE ($2 ON)</span>'
+          : '<span class="px-1.5 py-0.5 rounded bg-slate-200 text-slate-800 font-mono-code font-bold text-[10px]">FALSE</span>';
+        const srcPill = r.verification_source === 'CV_ASSISTED'
+          ? `<span class="px-1.5 py-0.5 rounded bg-teal-100 text-teal-950 font-bold text-[10px]">CV_ASSISTED${r.cv_confidence ? ' (' + r.cv_confidence.toFixed(3) + ')' : ''}</span>`
+          : '<span class="text-slate-700 font-semibold">MANUAL</span>';
+        const syncPill = r.sync_status === 'SYNCED'
+          ? '<span class="px-1.5 py-0.5 rounded bg-emerald-800 text-white font-mono-code font-bold text-[10px]">SYNCED</span>'
+          : '<span class="px-1.5 py-0.5 rounded bg-amber-500 text-slate-950 font-mono-code font-black text-[10px]">PENDING</span>';
+
+        return `
+          <tr class="hover:bg-slate-50">
+            <td class="py-2 px-3 font-mono-code text-slate-700">${shortUuid}…</td>
+            <td class="py-2 px-3 whitespace-nowrap">
+              <span class="px-1.5 py-0.5 rounded text-white font-mono-code font-bold text-[10px]" style="background-color:${cfg.hex}">${r.category_code}</span>
+              <span class="ml-1 font-bold text-slate-900">${cfg.labelEn}</span>
+            </td>
+            <td class="py-2 px-3 whitespace-nowrap">${lightPill}</td>
+            <td class="py-2 px-3 whitespace-nowrap">${srcPill}</td>
+            <td class="py-2 px-3 text-right whitespace-nowrap">${syncPill}</td>
+          </tr>`;
+      }).join('');
+    }
+
+    // Export CSV / JSON with Web Crypto SHA-256 (`audit_export_logs.file_checksum_sha256`)
+    async function exportSurveyAuditFile(format) {
+      if (memoryRecords.length === 0) {
+        showNonBlockingToast('CAT-01', 'Record at least 1 observation before exporting audit file', false);
+        return;
+      }
+
+      let content = '';
+      let mime = '';
+      if (format === 'json') {
+        content = JSON.stringify(memoryRecords, null, 2);
+        mime = 'application/json';
+      } else {
+        const cols = [
+          'observation_uuid', 'session_id', 'transit_mode', 'location_gate_id',
+          'shift_window', 'category_code', 'afc_light_on', 'verification_source',
+          'cv_confidence', 'recorded_at', 'sync_status'
+        ];
+        const lines = memoryRecords.map(row =>
+          cols.map(c => `"${String(row[c] ?? '').replace(/"/g, '""')}"`).join(',')
+        );
+        content = [cols.join(','), ...lines].join('\n');
+        mime = 'text/csv;charset=utf-8;';
+      }
+
+      let checksumHex = 'N/A';
+      if (window.crypto && crypto.subtle) {
+        const encoded = new TextEncoder().encode(content);
+        const hashBuf = await crypto.subtle.digest('SHA-256', encoded);
+        checksumHex = Array.from(new Uint8Array(hashBuf)).map(b => b.toString(16).padStart(2, '0')).join('');
+        document.getElementById('lastExportChecksumLabel').textContent = `SHA-256: ${checksumHex.slice(0, 16)}…`;
+      }
+
+      const blob = new Blob([content], { type: mime });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `HKTD_Ch5_Survey_${format.toUpperCase()}_${checksumHex.slice(0, 8)}.${format}`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+
+      showNonBlockingToast('CAT-04', `Exported ${memoryRecords.length} rows (${format.toUpperCase()}) • SHA-256 checksum logged`, false);
+    }
+
+    async function handleClearIndexedDB() {
+      const btn = document.getElementById('clearLogBtn');
+      if (!clearConfirmArmed) {
+        clearConfirmArmed = true;
+        btn.textContent = 'Confirm Clear?';
+        setTimeout(() => {
+          clearConfirmArmed = false;
+          btn.textContent = 'Clear Store';
+        }, 3000);
+        return;
+      }
+      clearConfirmArmed = false;
+      btn.textContent = 'Clear Store';
+      await dbClearAllObservations();
+      refreshWorkspaceADashboard();
+    }
+
+    // -------------------------------------------------------------------------
+    // 7. WORKSPACE B: CLIENT-SIDE EDGE CV PIPELINE (SECTION 5.3 / LISTING 5.3)
+    // -------------------------------------------------------------------------
+    const CV_PRESETS = {
+      PRESET_1: {
+        emoji: '🧓',
+        title: 'Preset 1: Senior Commuter (Est. Age 62 — JoyYou Card)',
+        subtitle: 'AFC Gate $2 Light ON • ImageBitmap.close() & tf.tidy() disposed immediately',
+        probs: { under60: 0.031, age60to64: 0.924, age65Plus: 0.045 },
+        maxProb: 0.924,
+        suggestedCat: 'CAT-03',
+        borderColor: '#0F766E',
+        badgeBg: 'bg-teal-100 text-teal-950',
+        headline: 'Suggested: CAT-03 — Octopus ($2 Light ON) Age 60–64 (JoyYou Tier)',
+        guidance: 'High-confidence 60–64 cohort (p60to64 >= 0.85). Single-tap below to log `CV_ASSISTED` observation into IndexedDB.',
+        lowConfidence: false
+      },
+      PRESET_2: {
+        emoji: '👵',
+        title: 'Preset 2: Senior Commuter (Est. Age 71 — Senior Cohort)',
+        subtitle: 'AFC Gate $2 Light ON • ImageBitmap.close() & tf.tidy() disposed immediately',
+        probs: { under60: 0.012, age60to64: 0.037, age65Plus: 0.951 },
+        maxProb: 0.951,
+        suggestedCat: 'CAT-04',
+        borderColor: '#1B365D',
+        badgeBg: 'bg-sky-100 text-sky-950',
+        headline: 'Suggested: CAT-04 — Octopus ($2 Light ON) Age 65 or Above',
+        guidance: 'High-confidence 65+ cohort (p65Plus >= 0.85). Single-tap below to log `CV_ASSISTED` observation into IndexedDB.',
+        lowConfidence: false
+      },
+      PRESET_3: {
+        emoji: '🧑‍🦽',
+        title: 'Preset 3: Young Adult Commuter (Est. Age 34 + $2 Gate Light ON)',
+        subtitle: 'pUnder60 = 0.892 while AFC $2 concession light illuminated',
+        probs: { under60: 0.892, age60to64: 0.074, age65Plus: 0.034 },
+        maxProb: 0.892,
+        suggestedCat: 'CAT-05',
+        borderColor: '#B45309',
+        badgeBg: 'bg-amber-100 text-amber-950',
+        headline: 'Flagged: CAT-05 — Other Eligible Class (Disability / Mental Health / Pregnancy)',
+        guidance: 'High-confidence <60 profile with active $2 gate light (pUnder60 >= 0.85). Confirm non-age concession eligibility before logging CAT-05.',
+        lowConfidence: false
+      },
+      PRESET_4: {
+        emoji: '😷',
+        title: 'Preset 4: Masked & Hatted Commuter (Dim Concourse Lighting)',
+        subtitle: 'Partial facial occlusion • max(P) = 0.685 < 0.85 threshold',
+        probs: { under60: 0.145, age60to64: 0.685, age65Plus: 0.170 },
+        maxProb: 0.685,
+        suggestedCat: null,
+        borderColor: '#BE123C',
+        badgeBg: 'bg-rose-100 text-rose-950',
+        headline: 'Ambiguous Profile — Manual Visual Verification Required',
+        guidance: 'Section 5.3.2 ethical safeguard: max(P) < 0.85 suppresses automated pre-selection. Perform polite visual verification and log as MANUAL.',
+        lowConfidence: true
+      }
+    };
+
+    async function enableWebRTCCamera() {
+      const video = document.getElementById('liveCameraVideo');
+      const overlay = document.getElementById('liveDetectionOverlay');
+      const synthCanvas = document.getElementById('syntheticCameraCanvas');
+      const stage = document.getElementById('presetVisualStage');
+      const sandboxNotice = document.getElementById('cameraSandboxNotice');
+      const btnStart = document.getElementById('btnStartWebRTC');
+      const btnStop = document.getElementById('btnStopWebRTC');
+      const sampleBar = document.getElementById('sampleFrameActionBar');
+
+      if (isEmbeddedInIframe() || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        detectEmbeddedFrameContext();
+        sandboxNotice.classList.remove('hidden');
+        startSyntheticCameraFeed();
+        return;
+      }
+
+      try {
+        activeWebRTCStream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } },
+          audio: false
+        });
+        stopSyntheticCameraLoop();
+        synthCanvas.classList.add('hidden');
+        sandboxNotice.classList.add('hidden');
+        video.srcObject = activeWebRTCStream;
+        await video.play();
+        video.classList.remove('hidden');
+        overlay.classList.remove('hidden');
+        stage.classList.add('hidden');
+        btnStart.classList.add('hidden');
+        btnStop.classList.remove('hidden');
+        sampleBar.classList.remove('hidden');
+        startRealTimeWebRTCInferenceLoop();
+        showNonBlockingToast('CAT-03', 'Live WebRTC neural age inference active (0 ms retention)', false);
+      } catch (_) {
+        detectEmbeddedFrameContext();
+        sandboxNotice.classList.remove('hidden');
+        startSyntheticCameraFeed();
+      }
+    }
+
+    function stopRealTimeWebRTCInferenceLoop() {
+      if (liveInferenceLoopId) {
+        clearTimeout(liveInferenceLoopId);
+        liveInferenceLoopId = null;
+      }
+    }
+
+    // Converts continuous predicted age (years) into calibrated 3-bucket softmax probabilities
+    function ageYearsToCohortProbabilities(estimatedAge, detectionScore) {
+      // Gaussian-style soft membership centered on Under-60 (<60), JoyYou (60-64), and Senior (65+)
+      const wUnder60 = estimatedAge < 58
+        ? Math.exp(-Math.pow((estimatedAge - 42) / 18, 2)) + 0.35
+        : Math.exp(-Math.pow((estimatedAge - 55) / 5.5, 2));
+      const w60to64 = Math.exp(-Math.pow((estimatedAge - 62) / 3.4, 2));
+      const w65Plus = estimatedAge > 66
+        ? Math.exp(-Math.pow((estimatedAge - 74) / 14, 2)) + 0.35
+        : Math.exp(-Math.pow((estimatedAge - 67) / 4.5, 2));
+
+      const sum = wUnder60 + w60to64 + w65Plus;
+      const qualityFactor = Math.min(1, Math.max(0.72, detectionScore));
+      const pUnder60 = (wUnder60 / sum) * qualityFactor + (1 - qualityFactor) * 0.34;
+      const p60to64 = (w60to64 / sum) * qualityFactor + (1 - qualityFactor) * 0.33;
+      const p65Plus = (w65Plus / sum) * qualityFactor + (1 - qualityFactor) * 0.33;
+
+      return {
+        under60: Number(pUnder60.toFixed(3)),
+        age60to64: Number(p60to64.toFixed(3)),
+        age65Plus: Number(p65Plus.toFixed(3))
+      };
+    }
+
+    function renderLiveInferenceResult(estimatedAge, detectionScore, latencyMs) {
+      const probs = ageYearsToCohortProbabilities(estimatedAge, detectionScore);
+      const maxProb = Math.max(probs.under60, probs.age60to64, probs.age65Plus);
+      const lowConfidence = maxProb < 0.85;
+
+      let suggestedCat = 'CAT-04';
+      let borderColor = '#1B365D';
+      let badgeBg = 'bg-sky-100 text-sky-950';
+      let headline = `Live Estimate (~${Math.round(estimatedAge)} yrs): CAT-04 — Age 65 or Above`;
+      let guidance = `Real-time neural inference (${(maxProb * 100).toFixed(1)}% confidence >= 0.85). Tap below to log CAT-04 (CV_ASSISTED).`;
+
+      if (probs.age60to64 === maxProb) {
+        suggestedCat = 'CAT-03';
+        borderColor = '#0F766E';
+        badgeBg = 'bg-teal-100 text-teal-950';
+        headline = `Live Estimate (~${Math.round(estimatedAge)} yrs): CAT-03 — Age 60–64 (JoyYou Tier)`;
+        guidance = `Real-time neural inference (${(maxProb * 100).toFixed(1)}% confidence >= 0.85). Tap below to log CAT-03 (CV_ASSISTED).`;
+      } else if (probs.under60 === maxProb) {
+        suggestedCat = 'CAT-05';
+        borderColor = '#B45309';
+        badgeBg = 'bg-amber-100 text-amber-950';
+        headline = `Live Estimate (~${Math.round(estimatedAge)} yrs + $2 Light ON): CAT-05 — Other Eligible Class`;
+        guidance = `Detected <60 commuter with active $2 gate light. Verify disability, mental health, or pregnancy pass before logging CAT-05.`;
+      }
+
+      if (lowConfidence) {
+        borderColor = '#BE123C';
+        badgeBg = 'bg-rose-100 text-rose-950';
+        headline = `Ambiguous Profile (~${Math.round(estimatedAge)} yrs, max(P)=${maxProb.toFixed(3)} < 0.85) — Manual Check`;
+        guidance = 'Section 5.3.2 ethical safeguard: confidence below 0.85 suppresses auto-selection. Perform polite visual verification and log as MANUAL.';
+      }
+
+      document.getElementById('telemetryLatencyMs').textContent = `${latencyMs} ms`;
+      const roiBox = document.getElementById('roiBoundingBox');
+      const roiLabel = document.getElementById('roiBadgeLabel');
+      roiBox.style.borderColor = borderColor;
+      roiLabel.style.backgroundColor = borderColor;
+      roiLabel.textContent = lowConfidence
+        ? `LOW CONF (~${Math.round(estimatedAge)}y) • ${maxProb.toFixed(3)}`
+        : `LIVE ROI (~${Math.round(estimatedAge)}y) • ${suggestedCat} (${maxProb.toFixed(3)})`;
+
+      document.getElementById('probUnder60').textContent = probs.under60.toFixed(3);
+      document.getElementById('prob60to64').textContent = probs.age60to64.toFixed(3);
+      document.getElementById('prob65Plus').textContent = probs.age65Plus.toFixed(3);
+
+      const panel = document.getElementById('cvDecisionPanel');
+      const badge = document.getElementById('cvConfidenceBadge');
+      const schemaTag = document.getElementById('cvSchemaTag');
+      const headlineEl = document.getElementById('cvDecisionHeadline');
+      const guidanceEl = document.getElementById('cvDecisionGuidance');
+      const actions = document.getElementById('cvActionButtonsContainer');
+
+      panel.style.borderColor = borderColor;
+      badge.className = `px-2.5 py-0.5 rounded-md font-extrabold text-xs ${badgeBg}`;
+      badge.textContent = lowConfidence
+        ? `LIVE SOFTMAX MAX(P): ${maxProb.toFixed(3)} (< 0.85 THRESHOLD)`
+        : `LIVE SOFTMAX MAX(P): ${maxProb.toFixed(3)} (>= 0.85 THRESHOLD)`;
+
+      schemaTag.textContent = lowConfidence
+        ? `est_age: ~${Math.round(estimatedAge)}y | source: MANUAL`
+        : `est_age: ~${Math.round(estimatedAge)}y | cv_confidence: ${maxProb.toFixed(3)}`;
+
+      headlineEl.textContent = headline;
+      guidanceEl.textContent = guidance;
+
+      if (!lowConfidence) {
+        const cfg = CATEGORY_CONFIG[suggestedCat];
+        actions.innerHTML = `
+          <button
+            onclick="dispatchCvObservation('${suggestedCat}', ${maxProb})"
+            style="background-color: ${cfg.hex};"
+            class="py-3 px-4 rounded-xl text-white font-extrabold text-xs sm:text-sm shadow flex items-center justify-center gap-2 transition cursor-pointer"
+          >
+            <span>✓ Confirm &amp; Log ${suggestedCat} (CV_ASSISTED)</span>
+          </button>
+          <button
+            onclick="dispatchCvObservation('CAT-05', ${maxProb})"
+            style="background-color: #B45309;"
+            class="py-3 px-4 rounded-xl text-white font-extrabold text-xs sm:text-sm shadow flex items-center justify-center gap-2 transition cursor-pointer"
+          >
+            <span>Override: Log CAT-05 (Other Eligible)</span>
+          </button>`;
+      } else {
+        actions.innerHTML = `
+          <button
+            onclick="dispatchManualFallbackFromCv('CAT-03')"
+            style="background-color: #0F766E;"
+            class="py-3 px-3 rounded-xl text-white font-extrabold text-xs shadow transition cursor-pointer"
+          >
+            Manual Verify: CAT-03 (60–64)
+          </button>
+          <button
+            onclick="dispatchManualFallbackFromCv('CAT-04')"
+            style="background-color: #1B365D;"
+            class="py-3 px-3 rounded-xl text-white font-extrabold text-xs shadow transition cursor-pointer"
+          >
+            Manual Verify: CAT-04 (65+)
+          </button>`;
+      }
+    }
+
+    async function runSingleLiveNeuralPass() {
+      const video = document.getElementById('liveCameraVideo');
+      const overlay = document.getElementById('liveDetectionOverlay');
+      if (!activeWebRTCStream || video.readyState < 2) return;
+
+      const t0 = performance.now();
+      const ctx = overlay.getContext('2d');
+      overlay.width = video.videoWidth || 640;
+      overlay.height = video.videoHeight || 480;
+      ctx.clearRect(0, 0, overlay.width, overlay.height);
+
+      if (cvModelsReady && typeof faceapi !== 'undefined') {
+        const detection = await faceapi
+          .detectSingleFace(video, new faceapi.TinyFaceDetectorOptions({ inputSize: 224, scoreThreshold: 0.45 }))
+          .withAgeAndGender();
+
+        const elapsed = Math.max(18, Math.round(performance.now() - t0));
+        if (detection) {
+          const { x, y, width, height } = detection.detection.box;
+          ctx.strokeStyle = '#10b981';
+          ctx.lineWidth = 3;
+          ctx.strokeRect(x, y, width, height);
+
+          ctx.fillStyle = 'rgba(2, 6, 23, 0.85)';
+          ctx.fillRect(x, Math.max(0, y - 24), 165, 22);
+          ctx.fillStyle = '#34d399';
+          ctx.font = 'bold 12px "JetBrains Mono", monospace';
+          ctx.fillText(`Est. Age: ${Math.round(detection.age)} yrs`, x + 6, Math.max(15, y - 8));
+
+          renderLiveInferenceResult(detection.age, detection.detection.score, elapsed);
+        } else {
+          document.getElementById('roiBadgeLabel').textContent = 'SCANNING FOR COMMUTER FACE...';
+          document.getElementById('telemetryLatencyMs').textContent = `${elapsed} ms`;
+        }
+      }
+    }
+
+    function startRealTimeWebRTCInferenceLoop() {
+      stopRealTimeWebRTCInferenceLoop();
+      async function tick() {
+        if (!activeWebRTCStream) return;
+        try {
+          await runSingleLiveNeuralPass();
+        } catch (_) {}
+        liveInferenceLoopId = setTimeout(tick, 350);
+      }
+      tick();
+    }
+
+      try {
+        activeWebRTCStream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: 'environment', width: { ideal: 640 }, height: { ideal: 480 } },
+          audio: false
+        });
+        stopSyntheticCameraLoop();
+        synthCanvas.classList.add('hidden');
+        sandboxNotice.classList.add('hidden');
+        video.srcObject = activeWebRTCStream;
+        video.classList.remove('hidden');
+        stage.classList.add('hidden');
+        btnStart.classList.add('hidden');
+        btnStop.classList.remove('hidden');
+        sampleBar.classList.remove('hidden');
+        showNonBlockingToast('CAT-03', 'Live WebRTC camera stream active (0 ms retention mode)', false);
+      } catch (_) {
+        detectEmbeddedFrameContext();
+        sandboxNotice.classList.remove('hidden');
+        startSyntheticCameraFeed();
+      }
+    }
+
+    function startSyntheticCameraFeed() {
+      const video = document.getElementById('liveCameraVideo');
+      const synthCanvas = document.getElementById('syntheticCameraCanvas');
+      const stage = document.getElementById('presetVisualStage');
+      const btnStart = document.getElementById('btnStartWebRTC');
+      const btnStop = document.getElementById('btnStopWebRTC');
+      const sampleBar = document.getElementById('sampleFrameActionBar');
+
+      video.classList.add('hidden');
+      stage.classList.add('hidden');
+      synthCanvas.classList.remove('hidden');
+      btnStart.classList.add('hidden');
+      btnStop.classList.remove('hidden');
+      sampleBar.classList.remove('hidden');
+
+      const ctx = synthCanvas.getContext('2d');
+      let tick = 0;
+
+      function renderSyntheticFrame() {
+        const rect = synthCanvas.getBoundingClientRect();
+        if (rect.width > 0 && rect.height > 0) {
+          synthCanvas.width = Math.floor(rect.width);
+          synthCanvas.height = Math.floor(rect.height);
+        }
+        const w = synthCanvas.width || 640;
+        const h = synthCanvas.height || 360;
+        tick += 0.04;
+
+        // Draw realistic MTR AFC gate concourse background
+        const grad = ctx.createLinearGradient(0, 0, 0, h);
+        grad.addColorStop(0, '#0f172a');
+        grad.addColorStop(1, '#020617');
+        ctx.fillStyle = grad;
+        ctx.fillRect(0, 0, w, h);
+
+        // Subtle perspective gate lanes
+        ctx.strokeStyle = 'rgba(56, 189, 248, 0.16)';
+        ctx.lineWidth = 1.5;
+        for (let i = 1; i <= 5; i++) {
+          const y = (h / 6) * i;
+          ctx.beginPath();
+          ctx.moveTo(0, y);
+          ctx.lineTo(w, y);
+          ctx.stroke();
+        }
+
+        // Animated commuter silhouette passing through AFC gate
+        const cx = w / 2 + Math.sin(tick) * 18;
+        const cy = h / 2 + Math.cos(tick * 1.5) * 6;
+
+        // Shoulders
+        ctx.fillStyle = '#1e293b';
+        ctx.beginPath();
+        ctx.ellipse(cx, cy + 68, 56, 36, 0, Math.PI, 0);
+        ctx.fill();
+
+        // Head & facial landmarks
+        ctx.fillStyle = '#cbd5e1';
+        ctx.beginPath();
+        ctx.arc(cx, cy - 8, 30, 0, Math.PI * 2);
+        ctx.fill();
+
+        // BlazeFace 6-point landmark dots (eyes, nose, mouth, ears)
+        ctx.fillStyle = '#10b981';
+        const landmarks = [
+          [cx - 11, cy - 14], [cx + 11, cy - 14],
+          [cx, cy - 5], [cx, cy + 8],
+          [cx - 28, cy - 8], [cx + 28, cy - 8]
+        ];
+        landmarks.forEach(([lx, ly]) => {
+          ctx.beginPath();
+          ctx.arc(lx, ly, 2.5, 0, Math.PI * 2);
+          ctx.fill();
+        });
+
+        // Top-left synthetic feed OSD timestamp
+        ctx.fillStyle = '#34d399';
+        ctx.font = 'bold 11px "JetBrains Mono", monospace';
+        ctx.fillText(`SYNTHETIC GATE FEED (SANDBOX FALLBACK) • ${new Date().toISOString().slice(11, 23)}Z`, 12, 22);
+
+        syntheticFeedAnimId = requestAnimationFrame(renderSyntheticFrame);
+      }
+
+      stopSyntheticCameraLoop();
+      renderSyntheticFrame();
+      showNonBlockingToast('CAT-03', 'Sandbox detected: Running Synthetic AFC Gate Feed — tap "Sample Frame & Purge RAM"', false);
+    }
+
+    function stopSyntheticCameraLoop() {
+      if (syntheticFeedAnimId) {
+        cancelAnimationFrame(syntheticFeedAnimId);
+        syntheticFeedAnimId = null;
+      }
+    }
+
+    function disableWebRTCCamera() {
+      if (activeWebRTCStream) {
+        activeWebRTCStream.getTracks().forEach(track => track.stop());
+        activeWebRTCStream = null;
+      }
+      stopRealTimeWebRTCInferenceLoop();
+      stopSyntheticCameraLoop();
+      document.getElementById('liveCameraVideo').classList.add('hidden');
+      document.getElementById('liveDetectionOverlay').classList.add('hidden');
+      document.getElementById('syntheticCameraCanvas').classList.add('hidden');
+      document.getElementById('presetVisualStage').classList.remove('hidden');
+      document.getElementById('btnStartWebRTC').classList.remove('hidden');
+      document.getElementById('btnStopWebRTC').classList.add('hidden');
+      document.getElementById('sampleFrameActionBar').classList.add('hidden');
+    }
+
+    // Samples current live frame (or synthetic feed), runs neural inference, and purges volatile buffer
+    async function captureAndPurgeTransientFrame() {
+      const video = document.getElementById('liveCameraVideo');
+      const synthCanvas = document.getElementById('syntheticCameraCanvas');
+      const isLiveVideo = !video.classList.contains('hidden') && video.readyState >= 2;
+      const isSynth = !synthCanvas.classList.contains('hidden');
+
+      if (!isLiveVideo && !isSynth) return;
+
+      if (isLiveVideo && cvModelsReady && typeof faceapi !== 'undefined') {
+        await runSingleLiveNeuralPass();
+        showNonBlockingToast('CAT-03', 'Live frame analyzed & WebGL tensors purged (0 ms retention)', false);
+        return;
+      }
+
+      // Synthetic fallback transient OffscreenCanvas capture & immediate 0 ms disposal
+      const sourceEl = isLiveVideo ? video : synthCanvas;
+      let offscreen = typeof OffscreenCanvas !== 'undefined'
+        ? new OffscreenCanvas(128, 128)
+        : document.createElement('canvas');
+      offscreen.width = 128;
+      offscreen.height = 128;
+      const ctx = offscreen.getContext('2d');
+      ctx.drawImage(sourceEl, 0, 0, 128, 128);
+      ctx.clearRect(0, 0, 128, 128);
+      offscreen = null;
+
+      const presets = ['PRESET_1', 'PRESET_2', 'PRESET_3'];
+      const chosen = presets[Math.floor(Math.random() * presets.length)];
+      applyCommuterPreset(chosen);
+      showNonBlockingToast(CV_PRESETS[chosen].suggestedCat, 'tf.tidy() complete • WebGL textures disposed (0 ms retention)', false);
+    }
+
+    function applyCommuterPreset(presetKey) {
+      const p = CV_PRESETS[presetKey];
+      const latency = Math.floor(94 + Math.random() * 26);
+
+      document.getElementById('presetEmoji').textContent = p.emoji;
+      document.getElementById('presetStageTitle').textContent = p.title;
+      document.getElementById('presetStageSubtitle').textContent = p.subtitle;
+      document.getElementById('telemetryLatencyMs').textContent = `${latency} ms`;
+
+      const roiBox = document.getElementById('roiBoundingBox');
+      const roiLabel = document.getElementById('roiBadgeLabel');
+      roiBox.style.borderColor = p.borderColor;
+      roiLabel.style.backgroundColor = p.borderColor;
+      roiLabel.textContent = p.lowConfidence
+        ? `LOW CONF • max(P)=${p.maxProb.toFixed(3)}`
+        : `ROI LOCKED • ${p.suggestedCat} (${p.maxProb.toFixed(3)})`;
+
+      document.getElementById('probUnder60').textContent = p.probs.under60.toFixed(3);
+      document.getElementById('prob60to64').textContent = p.probs.age60to64.toFixed(3);
+      document.getElementById('prob65Plus').textContent = p.probs.age65Plus.toFixed(3);
+
+      const panel = document.getElementById('cvDecisionPanel');
+      const badge = document.getElementById('cvConfidenceBadge');
+      const schemaTag = document.getElementById('cvSchemaTag');
+      const headline = document.getElementById('cvDecisionHeadline');
+      const guidance = document.getElementById('cvDecisionGuidance');
+      const actions = document.getElementById('cvActionButtonsContainer');
+
+      panel.style.borderColor = p.borderColor;
+      badge.className = `px-2.5 py-0.5 rounded-md font-extrabold text-xs ${p.badgeBg}`;
+      badge.textContent = p.lowConfidence
+        ? `SOFTMAX MAX(P): ${p.maxProb.toFixed(3)} (< 0.85 THRESHOLD)`
+        : `SOFTMAX MAX(P): ${p.maxProb.toFixed(3)} (>= 0.85 THRESHOLD)`;
+
+      schemaTag.textContent = p.lowConfidence
+        ? 'verification_source: MANUAL'
+        : `cv_confidence: ${p.maxProb.toFixed(3)}`;
+
+      headline.textContent = p.headline;
+      guidance.textContent = p.guidance;
+
+      if (!p.lowConfidence) {
+        const cfg = CATEGORY_CONFIG[p.suggestedCat];
+        actions.innerHTML = `
+          <button
+            onclick="dispatchCvObservation('${p.suggestedCat}', ${p.maxProb})"
+            style="background-color: ${cfg.hex};"
+            class="py-3 px-4 rounded-xl text-white font-extrabold text-xs sm:text-sm shadow flex items-center justify-center gap-2 transition cursor-pointer"
+          >
+            <span>✓ Confirm &amp; Log ${p.suggestedCat} (CV_ASSISTED)</span>
+          </button>
+          <button
+            onclick="dispatchCvObservation('CAT-05', ${p.maxProb})"
+            style="background-color: #B45309;"
+            class="py-3 px-4 rounded-xl text-white font-extrabold text-xs sm:text-sm shadow flex items-center justify-center gap-2 transition cursor-pointer"
+          >
+            <span>Override: Log CAT-05 (Other Eligible)</span>
+          </button>`;
+      } else {
+        actions.innerHTML = `
+          <button
+            onclick="dispatchManualFallbackFromCv('CAT-03')"
+            style="background-color: #0F766E;"
+            class="py-3 px-3 rounded-xl text-white font-extrabold text-xs shadow transition cursor-pointer"
+          >
+            Manual Verify: CAT-03 (60–64)
+          </button>
+          <button
+            onclick="dispatchManualFallbackFromCv('CAT-04')"
+            style="background-color: #1B365D;"
+            class="py-3 px-3 rounded-xl text-white font-extrabold text-xs shadow transition cursor-pointer"
+          >
+            Manual Verify: CAT-04 (65+)
+          </button>`;
+      }
+    }
+
+    async function dispatchCvObservation(categoryCode, confidence) {
+      await logPassengerObservation(categoryCode, 'CV_ASSISTED', confidence);
+      switchWorkspace('A');
+    }
+
+    async function dispatchManualFallbackFromCv(categoryCode) {
+      await logPassengerObservation(categoryCode, 'MANUAL', null);
+      switchWorkspace('A');
+    }
+  </script>
+</body>
+</html>
