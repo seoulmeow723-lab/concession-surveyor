@@ -88,15 +88,6 @@
             <span class="text-slate-600">|</span>
             <span class="text-amber-300 font-bold">Q:<span id="headerPendingCount">0</span></span>
           </div>
-
-          <!-- PDPO (Cap. 486) & Chapter 5 Architecture Modal Trigger (?) -->
-          <button
-            onclick="toggleGuideModal(true)"
-            aria-label="Open PDPO Cap. 486 Privacy and Chapter 5 System Architecture Guide"
-            class="w-8 h-8 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-600 text-white font-black text-sm flex items-center justify-center transition cursor-pointer shrink-0"
-          >
-            ?
-          </button>
         </div>
       </div>
 
@@ -513,66 +504,18 @@
           </div>
         </div>
 
-        <!-- 4 Commuter Test Presets (Matching Section 5.3.2 Decision Gate) -->
-        <div class="p-3.5 bg-slate-100 border-t border-slate-300 space-y-2">
-          <div class="flex items-center justify-between">
-            <span class="text-[11px] font-extrabold uppercase tracking-wider text-slate-800">
-              Section 5.3.2 Confidence-Gated Test Scenarios (測試樣本):
-            </span>
-            <button
-              id="btnCaptureTransientFrame"
-              onclick="captureAndPurgeTransientFrame()"
-              class="hidden px-2.5 py-1 rounded-lg bg-emerald-700 hover:bg-emerald-600 text-white text-[11px] font-extrabold cursor-pointer"
-            >
-              Sample Frame &amp; Purge RAM
-            </button>
-          </div>
-
-          <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
-            <button
-              onclick="applyCommuterPreset('PRESET_1')"
-              class="p-2.5 rounded-xl bg-white hover:bg-teal-50 border border-slate-300 hover:border-teal-600 text-left transition cursor-pointer"
-            >
-              <div class="flex items-center justify-between">
-                <span class="text-xs font-extrabold text-slate-950">1. Age 62 (JoyYou Card)</span>
-                <span class="text-[11px] font-mono-code font-bold text-teal-800">p60to64=0.924 → CAT-03</span>
-              </div>
-              <p class="text-[11px] text-slate-600 mt-0.5">High-confidence 60–64 cohort (≥ 0.85 threshold)</p>
-            </button>
-
-            <button
-              onclick="applyCommuterPreset('PRESET_2')"
-              class="p-2.5 rounded-xl bg-white hover:bg-sky-50 border border-slate-300 hover:border-sky-700 text-left transition cursor-pointer"
-            >
-              <div class="flex items-center justify-between">
-                <span class="text-xs font-extrabold text-slate-950">2. Senior Commuter (Age 71)</span>
-                <span class="text-[11px] font-mono-code font-bold text-sky-900">p65Plus=0.951 → CAT-04</span>
-              </div>
-              <p class="text-[11px] text-slate-600 mt-0.5">High-confidence 65+ cohort (≥ 0.85 threshold)</p>
-            </button>
-
-            <button
-              onclick="applyCommuterPreset('PRESET_3')"
-              class="p-2.5 rounded-xl bg-white hover:bg-amber-50 border border-slate-300 hover:border-amber-600 text-left transition cursor-pointer"
-            >
-              <div class="flex items-center justify-between">
-                <span class="text-xs font-extrabold text-slate-950">3. Age 34 + $2 Gate Light ON</span>
-                <span class="text-[11px] font-mono-code font-bold text-amber-800">pUnder60=0.892 → CAT-05</span>
-              </div>
-              <p class="text-[11px] text-slate-600 mt-0.5">Triggers CAT-05 Disability / Mental Health / Pregnancy check</p>
-            </button>
-
-            <button
-              onclick="applyCommuterPreset('PRESET_4')"
-              class="p-2.5 rounded-xl bg-white hover:bg-rose-50 border border-slate-300 hover:border-rose-600 text-left transition cursor-pointer"
-            >
-              <div class="flex items-center justify-between">
-                <span class="text-xs font-extrabold text-slate-950">4. Masked &amp; Hatted (Occluded)</span>
-                <span class="text-[11px] font-mono-code font-bold text-rose-800">max(P)=0.685 &lt; 0.85</span>
-              </div>
-              <p class="text-[11px] text-slate-600 mt-0.5">Ambiguous profile; requires manual visual check</p>
-            </button>
-          </div>
+        <!-- Camera Frame Sampling Action Bar -->
+        <div id="sampleFrameActionBar" class="hidden p-3 bg-slate-100 border-t border-slate-300 flex items-center justify-between gap-2">
+          <span class="text-[11px] font-extrabold uppercase tracking-wider text-slate-800">
+            Transient Edge Inference (0 ms RAM Retention):
+          </span>
+          <button
+            id="btnCaptureTransientFrame"
+            onclick="captureAndPurgeTransientFrame()"
+            class="px-3 py-1.5 rounded-xl bg-emerald-700 hover:bg-emerald-600 text-white text-xs font-extrabold shadow-sm cursor-pointer"
+          >
+            Sample Frame &amp; Purge RAM
+          </button>
         </div>
       </div>
 
@@ -632,63 +575,6 @@
     >
       UNDO 撤銷
     </button>
-  </div>
-
-  <!-- ======================================================================= -->
-  <!-- PDPO (CAP. 486) & CHAPTER 5 SYSTEM ARCHITECTURE MODAL (?)               -->
-  <!-- ======================================================================= -->
-  <div
-    id="pdpoGuideModal"
-    class="hidden fixed inset-0 z-50 bg-slate-950/75 backdrop-blur-xs flex items-center justify-center p-4"
-    role="dialog"
-    aria-modal="true"
-    aria-labelledby="guideModalTitle"
-  >
-    <div class="bg-white rounded-2xl max-w-lg w-full shadow-2xl border border-slate-300 overflow-hidden">
-      <div class="px-4 py-3 bg-slate-950 text-white flex items-center justify-between">
-        <h2 id="guideModalTitle" class="text-sm font-extrabold uppercase tracking-wider">
-          Chapter 5 System Architecture &amp; PDPO (Cap. 486) Guide
-        </h2>
-        <button
-          onclick="toggleGuideModal(false)"
-          class="w-7 h-7 rounded-lg bg-slate-800 hover:bg-slate-700 text-white font-bold text-sm cursor-pointer"
-        >
-          ✕
-        </button>
-      </div>
-
-      <div class="p-4 space-y-3 text-xs text-slate-800 max-h-[75vh] overflow-y-auto leading-relaxed">
-        <div class="p-3 rounded-xl bg-slate-100 border border-slate-300">
-          <p class="font-extrabold text-slate-950">1. Dual-Store Persistence &amp; PostgreSQL 16 Domain Constraints (Sec. 5.1)</p>
-          <p class="mt-1">
-            Client-side IndexedDB mirrors the PostgreSQL <code>survey_observations</code> schema with UUIDv4 primary keys and domain check constraint <code>chk_afc_light_semantics</code> (<code>afc_light_on = FALSE</code> for CAT-01/02; <code>TRUE</code> for CAT-03/04/05).
-          </p>
-        </div>
-
-        <div class="p-3 rounded-xl bg-emerald-50 border border-emerald-300 text-emerald-950">
-          <p class="font-extrabold">2. Offscreen WebGL/WASM Worker &amp; PDPO Zero-Retention (Sec. 5.3)</p>
-          <p class="mt-1">
-            MediaPipe BlazeFace + quantized MobileNetV2 run strictly inside an isolated browser thread using <code>ImageBitmap.close()</code> and <code>tf.tidy()</code> so intermediate GPU/WebGL tensors are disposed in <strong>0 ms</strong> with zero network image transmission.
-          </p>
-        </div>
-
-        <div class="p-3 rounded-xl bg-indigo-50 border border-indigo-300 text-indigo-950">
-          <p class="font-extrabold">3. Idempotent RESTful Synchronization API (Sec. 5.4)</p>
-          <p class="mt-1">
-            Workbox Background Sync flushes queued batches (up to 200 records) to <code>POST /api/v1/sync/batch</code> using <code>INSERT ... ON CONFLICT (observation_uuid) DO NOTHING</code>, preventing duplicate counts during mobile signal handoffs.
-          </p>
-        </div>
-      </div>
-
-      <div class="px-4 py-3 bg-slate-100 border-t border-slate-200 flex justify-end">
-        <button
-          onclick="toggleGuideModal(false)"
-          class="px-4 py-2 rounded-xl bg-slate-950 text-white text-xs font-extrabold cursor-pointer"
-        >
-          Close Guide 關閉
-        </button>
-      </div>
-    </div>
   </div>
 
   <!-- ======================================================================= -->
@@ -924,12 +810,6 @@
         tabA.className = 'py-2 px-2.5 rounded-lg text-xs sm:text-sm font-extrabold text-slate-200 hover:bg-slate-800 flex items-center justify-center gap-1.5 transition cursor-pointer';
         tabA.setAttribute('aria-selected', 'false');
       }
-    }
-
-    function toggleGuideModal(show) {
-      const modal = document.getElementById('pdpoGuideModal');
-      if (show) modal.classList.remove('hidden');
-      else modal.classList.add('hidden');
     }
 
     // -------------------------------------------------------------------------
@@ -1248,7 +1128,7 @@
       const sandboxNotice = document.getElementById('cameraSandboxNotice');
       const btnStart = document.getElementById('btnStartWebRTC');
       const btnStop = document.getElementById('btnStopWebRTC');
-      const btnSample = document.getElementById('btnCaptureTransientFrame');
+      const sampleBar = document.getElementById('sampleFrameActionBar');
 
       if (isEmbeddedInIframe() || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
         detectEmbeddedFrameContext();
@@ -1270,7 +1150,7 @@
         stage.classList.add('hidden');
         btnStart.classList.add('hidden');
         btnStop.classList.remove('hidden');
-        btnSample.classList.remove('hidden');
+        sampleBar.classList.remove('hidden');
         showNonBlockingToast('CAT-03', 'Live WebRTC camera stream active (0 ms retention mode)', false);
       } catch (_) {
         detectEmbeddedFrameContext();
@@ -1285,14 +1165,14 @@
       const stage = document.getElementById('presetVisualStage');
       const btnStart = document.getElementById('btnStartWebRTC');
       const btnStop = document.getElementById('btnStopWebRTC');
-      const btnSample = document.getElementById('btnCaptureTransientFrame');
+      const sampleBar = document.getElementById('sampleFrameActionBar');
 
       video.classList.add('hidden');
       stage.classList.add('hidden');
       synthCanvas.classList.remove('hidden');
       btnStart.classList.add('hidden');
       btnStop.classList.remove('hidden');
-      btnSample.classList.remove('hidden');
+      sampleBar.classList.remove('hidden');
 
       const ctx = synthCanvas.getContext('2d');
       let tick = 0;
@@ -1385,7 +1265,7 @@
       document.getElementById('presetVisualStage').classList.remove('hidden');
       document.getElementById('btnStartWebRTC').classList.remove('hidden');
       document.getElementById('btnStopWebRTC').classList.add('hidden');
-      document.getElementById('btnCaptureTransientFrame').classList.add('hidden');
+      document.getElementById('sampleFrameActionBar').classList.add('hidden');
     }
 
     // Simulates ImageBitmap transfer -> tf.tidy() -> immediate 0 ms memory disposal
